@@ -6,6 +6,7 @@ import {
   index,
   jsonb,
   boolean,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
@@ -371,7 +372,9 @@ export const scriptRuns = pgTable(
     aiConversationId: text("ai_conversation_id").references(() => aiConversations.id, {
       onDelete: "set null",
     }),
-    aiToolCallId: text("ai_tool_call_id").references(() => aiToolCalls.id, {
+    // Breaks circular type inference with aiToolCalls (which refs scriptRuns).
+    // See Drizzle docs: https://orm.drizzle.team/docs/indexes-constraints
+    aiToolCallId: text("ai_tool_call_id").references((): AnyPgColumn => aiToolCalls.id, {
       onDelete: "set null",
     }),
   },
@@ -451,7 +454,8 @@ export const aiConversations = pgTable("ai_conversations", {
   model: text("model").notNull(),
   status: text("status").notNull().default("pending"), // pending | streaming | completed | ...
   sandboxMode: boolean("sandbox_mode").notNull().default(false),
-  priorConversationId: text("prior_conversation_id").references((): any => aiConversations.id),
+  // Self-reference for FR-017 spawn linkage; AnyPgColumn breaks the cycle.
+  priorConversationId: text("prior_conversation_id").references((): AnyPgColumn => aiConversations.id),
   hypothesis: text("hypothesis"),
   confidence: text("confidence"), // high | medium | low | null
   tokensIn: integer("tokens_in").notNull().default(0),
@@ -492,7 +496,8 @@ export const aiToolCalls = pgTable("ai_tool_calls", {
   targetServerId: text("target_server_id").references(() => servers.id, { onDelete: "set null" }),
   targetAppId: text("target_app_id").references(() => applications.id, { onDelete: "set null" }),
   status: text("status").notNull().default("proposed"), // proposed | approved | ...
-  scriptRunId: text("script_run_id").references(() => scriptRuns.id, { onDelete: "set null" }),
+  // Breaks circular type inference with scriptRuns (which refs aiToolCalls).
+  scriptRunId: text("script_run_id").references((): AnyPgColumn => scriptRuns.id, { onDelete: "set null" }),
   dryRun: boolean("dry_run").notNull().default(false),
   decidedBy: text("decided_by"),
   createdAt: text("created_at").notNull(),
