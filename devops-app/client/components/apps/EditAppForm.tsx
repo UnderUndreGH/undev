@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { ScriptPathField } from "./ScriptPathField.js";
 import { HealthSection } from "./AddAppForm.js";
 import { EnvVarsEditor } from "./EnvVarsEditor.js";
@@ -64,6 +64,21 @@ export function EditAppForm({
   const [form, setForm] = useState<EditAppFormValues>(initialValues);
   const { lint } = useComposeReview();
 
+  // G1 (gemini-code-assist): debounce compose-content keystroke → lint mutation
+  // to prevent per-keystroke network spam. 300ms matches FR-032 spec.
+  const lintTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (lintTimeoutRef.current) clearTimeout(lintTimeoutRef.current);
+    };
+  }, []);
+  function debouncedLint(value: string) {
+    if (lintTimeoutRef.current) clearTimeout(lintTimeoutRef.current);
+    lintTimeoutRef.current = setTimeout(() => {
+      lint.mutate(value);
+    }, 300);
+  }
+
   function update<K extends keyof EditAppFormValues>(
     key: K,
     value: EditAppFormValues[K],
@@ -119,7 +134,7 @@ export function EditAppForm({
               <textarea
                 className="w-full bg-gray-950 border border-gray-700 rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:border-brand-purple min-h-[200px]"
                 placeholder="Paste docker-compose.yml here for review..."
-                onChange={(e) => lint.mutate(e.target.value)}
+                onChange={(e) => debouncedLint(e.target.value)}
               />
               <ComposeStaticLintInline findings={lint.data?.findings ?? []} />
             </label>

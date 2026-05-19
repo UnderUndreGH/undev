@@ -20,17 +20,7 @@ aiComposeReviewRouter.post("/lint", async (req, res) => {
 aiComposeReviewRouter.post("/review", async (req, res) => {
   const { appId, content } = req.body;
   if (!appId || typeof content !== 'string') throw AppError.badRequest("AppId and content are required");
-  
-  const result = await reviewComposeContent(appId, content);
-  res.json(result);
-});
 
-
-// POST /api/ai/compose-review (Static + LLM)
-aiComposeReviewRouter.post("/review", async (req, res) => {
-  const { appId, content } = req.body;
-  if (!appId || typeof content !== 'string') throw AppError.badRequest("AppId and content are required");
-  
   const result = await reviewComposeContent(appId, content);
   res.json(result);
 });
