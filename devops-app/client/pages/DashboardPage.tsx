@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { api } from "../lib/api.js";
 import { InterruptedDeploysPanel } from "../components/apps/InterruptedDeploysPanel.js";
+import { AnalyzeButton } from "../components/ai/AnalyzeButton.js";
 
 interface Server {
   id: string;
@@ -142,9 +143,14 @@ export function DashboardPage() {
                 </h3>
                 <StatusBadge status={server.status} />
               </div>
-              <p className="text-sm text-gray-400">
-                {server.host}:{server.port}
-              </p>
+              <div className="flex items-center justify-between mt-2">
+                <p className="text-sm text-gray-400">
+                  {server.host}:{server.port}
+                </p>
+                {server.status === 'offline' && (
+                  <AnalyzeButton targetKind="server" targetId={server.id} variant="ghost" className="!p-1" />
+                )}
+              </div>
               {server.lastHealthCheck && (
                 <p className="text-xs text-gray-600 mt-1">
                   Last check: {new Date(server.lastHealthCheck).toLocaleString()}

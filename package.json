@@ -63,6 +63,6 @@
     }
   },
   "dependencies": {
-    "clai-helpers": "^0.1.1"
+    "clai-helpers": "^0.1.2"
   }
 }

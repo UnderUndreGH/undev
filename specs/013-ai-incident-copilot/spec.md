@@ -920,7 +920,7 @@ giving consistent advice and learn from accumulated context.
 
   No dashboard-wide banner for ANY individual tool-call. Banners are
   reserved for global-state events (kill switch engaged, budget
-  exhausted, provider unreachable system-wide).
+  exhausted, conversation aborted by timeout, provider unreachable system-wide).
 
 ## Success Criteria
 

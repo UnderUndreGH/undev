@@ -22,6 +22,7 @@ import {
 import { logger } from "../lib/logger.js";
 import { channelManager } from "../ws/channels.js";
 import { notifier } from "./notifier.js";
+import { onPushEvent } from "./ai/push-subscriber.js";
 import { runContainerProbe } from "./probes/container.js";
 import { runHttpProbe } from "./probes/http.js";
 import { runCertExpiryProbe } from "./probes/cert-expiry.js";
@@ -329,6 +330,15 @@ export async function commitState(
 
   const transition: "to-unhealthy" | "to-healthy" =
     newOutcome === "unhealthy" ? "to-unhealthy" : "to-healthy";
+
+  if (transition === "to-unhealthy") {
+    void onPushEvent({
+      targetKind: "app",
+      targetId: app.id,
+      eventClass: "health_degraded",
+    }).catch((err) => logger.error({ ctx: "push-trigger", err }, "AI push trigger failed"));
+  }
+
   const downtimeMs =
     transition === "to-healthy" && prevChangeAtIso !== null
       ? Math.max(0, Date.now() - new Date(prevChangeAtIso).getTime())

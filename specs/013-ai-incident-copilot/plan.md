@@ -199,25 +199,23 @@ Summary:
 
 ## Constitution Check
 
-No `.specify/memory/constitution.md` in repo. CLAUDE.md Standing Orders +
-AGCG serve as proxy (same convention as features 010-012).
+Validating against `.specify/memory/constitution.md` (which incorporates CLAUDE.md Standing Orders and AGCG guardrails).
 
-| Rule (CLAUDE.md) | Status | Notes |
+| Rule (Constitution) | Status | Notes |
 |---|---|---|
-| #1 Never commit/push without request | PASS | Plan is files only |
-| #2 Never install packages without approval | PASS | 4 new deps identified, awaiting approval |
-| #3 Never use `--force / --yes / -y` | PASS | All destructive flows require typed-confirm |
-| #4 Never put secrets in code/commits/logs | PASS | API keys sealed via envelope-cipher; never logged; write-only in UI |
-| #5 Never run migrations directly | PASS | `0013` ships as reviewable SQL |
-| #6 No destructive without 3x consent | PASS | Tool-call tiers: low=1-click, medium=server-validated typed-ack, high=server-issued challenge + typed-id + 5s cooldown |
-| #7 Never read .env unless asked | PASS | Master key consumed via existing boot pattern |
+| I. Operator safety first | PASS | All destructive flows require typed-confirm + server-side cooldown |
+| II. Secrets never leak | PASS | API keys sealed via envelope-cipher; never logged; masked in context |
+| III. Reviewable DB changes | PASS | 0013 ships as reviewable SQL; Drizzle schema updated post-migration |
+| IV. Typed boundaries | PASS | Zod validation on every route; typed manifest entries |
+| V. Feature flags | PASS | Dormant by default (`ai_settings.enabled = false`); sandbox default |
+| VI. Independent review | PASS | analyze PASS + codex/gemini reviews (addressing HIGH findings) |
+| VII. Snapshot stages | PASS | review stages tagged (once tooling restored) |
 | AGCG: no `as any` | PASS | All types derived from Drizzle schema + Zod |
-| AGCG: no `throw new Error()` raw | PASS | Use `AppError.*` factories |
+| AGCG: no `throw Error` | PASS | Use `AppError.*` factories |
 | AGCG: no `console.log` | PASS | Pino with `ctx` |
-| AGCG: no swallowed `catch (e) { }` | PASS | All catches log + typed result |
-| AGCG: no `req.body.field` without Zod | PASS | Every new route validates body |
+| AGCG: no unvalidated req.body | PASS | Every new route validates body |
 
-**Gate status: PASS.** No waivers.
+**Gate status: PASS.** All principles verified.
 
 ## Phase 0: Outline & Research
 

@@ -30,10 +30,11 @@ CREATE TABLE "ai_settings" (
   "global_kill_switch_engaged"      BOOLEAN NOT NULL DEFAULT false,
   "default_sandbox"                 BOOLEAN NOT NULL DEFAULT false,
   "conversation_retention_days"     INTEGER NOT NULL DEFAULT 90,
+  "max_conversation_duration_minutes" INTEGER NOT NULL DEFAULT 30,
   "updated_at"                      TEXT NOT NULL DEFAULT to_char(NOW() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
 );
 
-INSERT INTO "ai_settings" ("id") VALUES (1);
+INSERT INTO "ai_settings" ("id") VALUES (1) ON CONFLICT ("id") DO NOTHING;
 
 -- 2. AI Provider Keys
 CREATE TABLE "ai_provider_keys" (
@@ -65,7 +66,7 @@ CREATE TABLE "ai_conversations" (
   "model"                   TEXT NOT NULL,
   "status"                  TEXT NOT NULL DEFAULT 'pending' CHECK ("status" IN (
     'pending', 'streaming', 'completed', 'error',
-    'cap_exhausted', 'aborted_by_kill_switch', 'provider_rate_limited'
+    'cap_exhausted', 'aborted_by_kill_switch', 'aborted_by_timeout', 'provider_rate_limited'
   )),
   "sandbox_mode"            BOOLEAN NOT NULL DEFAULT false,
   "prior_conversation_id"   TEXT NULL REFERENCES "ai_conversations"("id"),
@@ -73,6 +74,7 @@ CREATE TABLE "ai_conversations" (
   "confidence"              TEXT NULL CHECK ("confidence" IS NULL OR "confidence" IN ('high', 'medium', 'low')),
   "tokens_in"               INTEGER NOT NULL DEFAULT 0,
   "tokens_out"              INTEGER NOT NULL DEFAULT 0,
+  "tokens_reserved"         INTEGER NOT NULL DEFAULT 0,
   "est_cost_usd"            NUMERIC NOT NULL DEFAULT 0,
   "created_at"              TEXT NOT NULL DEFAULT to_char(NOW() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
   "updated_at"              TEXT NOT NULL DEFAULT to_char(NOW() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
@@ -85,6 +87,8 @@ CREATE INDEX "idx_ai_conversations_status"
   ON "ai_conversations" ("status") WHERE "status" NOT IN ('completed', 'error');
 CREATE INDEX "idx_ai_conversations_archived"
   ON "ai_conversations" ("archived_at") WHERE "archived_at" IS NULL;
+CREATE INDEX "idx_ai_conversations_hypothesis_fts"
+  ON "ai_conversations" USING gin(to_tsvector('english', "hypothesis"));
 
 -- 4. AI Messages
 CREATE TABLE "ai_messages" (
@@ -93,7 +97,7 @@ CREATE TABLE "ai_messages" (
   "role"              TEXT NOT NULL CHECK ("role" IN ('system', 'user', 'assistant', 'tool')),
   "seq"               INTEGER NOT NULL,
   "content_text"      TEXT NOT NULL,
-  "content_meta"      TEXT NULL,
+  "content_meta"      JSONB NULL,
   "tokens_in"         INTEGER NOT NULL DEFAULT 0,
   "tokens_out"        INTEGER NOT NULL DEFAULT 0,
   "created_at"        TEXT NOT NULL DEFAULT to_char(NOW() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
@@ -105,7 +109,7 @@ CREATE TABLE "ai_tool_calls" (
   "id"                TEXT PRIMARY KEY,
   "conversation_id"   TEXT NOT NULL REFERENCES "ai_conversations"("id") ON DELETE CASCADE,
   "manifest_id"       TEXT NOT NULL,
-  "params_json"       TEXT NOT NULL,
+  "params_json"       JSONB NOT NULL,
   "target_server_id"  TEXT NULL REFERENCES "servers"("id") ON DELETE SET NULL,
   "target_app_id"     TEXT NULL REFERENCES "applications"("id") ON DELETE SET NULL,
   "status"            TEXT NOT NULL DEFAULT 'proposed' CHECK ("status" IN (
@@ -135,7 +139,7 @@ CREATE TABLE "ai_dismissed_findings" (
 CREATE TABLE "ai_compose_review_cache" (
   "app_id"          TEXT NOT NULL REFERENCES "applications"("id") ON DELETE CASCADE,
   "content_sha256"  TEXT NOT NULL,
-  "findings_json"   TEXT NOT NULL,
+  "findings_json"   JSONB NOT NULL,
   "conversation_id" TEXT NULL REFERENCES "ai_conversations"("id") ON DELETE SET NULL,
   "created_at"      TEXT NOT NULL DEFAULT to_char(NOW() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
   PRIMARY KEY ("app_id", "content_sha256")
@@ -261,6 +265,8 @@ New entries for `notification_preferences` (feature 011 catalogue):
 | `ai.tool_call_executed_destructive` | security | ON |
 | `ai.budget_exhausted` | operational | ON |
 | `ai.kill_switch_engaged` | security | ON |
+| `ai.kill_switch_released` | security | ON |
+| `ai.conversation_aborted_timeout` | operational | ON |
 | `ai.cost_drift_alert` | operational | ON |
 | `ai.context_masking_warning` | security | ON |
 

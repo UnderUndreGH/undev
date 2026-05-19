@@ -51,6 +51,15 @@ export const EVENT_CATALOGUE: ReadonlyArray<EventCatalogueEntry> = [
   { type: "deploy.caddy_admin_failure_pre_switch", description: "Blue/green: Caddy admin unreachable before switch (deploy aborted, no impact)", defaultEnabled: true, category: "failure" },
   { type: "deploy.caddy_admin_failure_post_switch", description: "Blue/green: Caddy admin unreachable after switch (manual recovery required)", defaultEnabled: true, category: "failure" },
   { type: "deploy.blue_green_succeeded", description: "Blue/green deploy completed successfully", defaultEnabled: false, category: "success" },
+
+  // ── Feature 013: AI Incident Copilot ─────────────────────────────────
+  { type: "ai.tool_call_executed_destructive", description: "AI: destructive action executed", defaultEnabled: true, category: "security" },
+  { type: "ai.budget_exhausted", description: "AI: monthly token budget exhausted", defaultEnabled: true, category: "operational" },
+  { type: "ai.kill_switch_engaged", description: "AI: global kill switch engaged", defaultEnabled: true, category: "security" },
+  { type: "ai.kill_switch_released", description: "AI: global kill switch released", defaultEnabled: true, category: "security" },
+  { type: "ai.conversation_aborted_timeout", description: "AI: analysis aborted by timeout", defaultEnabled: true, category: "operational" },
+  { type: "ai.cost_drift_alert", description: "AI: significant token cost drift detected", defaultEnabled: true, category: "operational" },
+  { type: "ai.context_masking_warning", description: "AI: sensitive data pattern detected in context", defaultEnabled: true, category: "security" },
 ];
 
 const TYPE_INDEX: ReadonlyMap<string, EventCatalogueEntry> = new Map(

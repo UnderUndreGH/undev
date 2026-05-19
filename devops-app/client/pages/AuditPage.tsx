@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api.js";
+import { AnalyzeButton } from "../components/ai/AnalyzeButton.js";
 
 interface AuditEntry {
   id: string;
@@ -56,6 +57,7 @@ export function AuditPage() {
                   <th className="px-4 py-2 font-medium">Action</th>
                   <th className="px-4 py-2 font-medium">Target</th>
                   <th className="px-4 py-2 font-medium">Result</th>
+                  <th className="px-4 py-2 font-medium" />
                 </tr>
               </thead>
               <tbody>
@@ -78,6 +80,11 @@ export function AuditPage() {
                     </td>
                     <td className="px-4 py-2">
                       <ResultBadge result={entry.result} />
+                    </td>
+                    <td className="px-4 py-2 text-right">
+                       {(entry.result.toLowerCase() === 'failure' || entry.result.toLowerCase() === 'error') && (
+                         <AnalyzeButton targetKind="audit_event" targetId={entry.id} variant="ghost" className="!p-1 opacity-0 group-hover:opacity-100" />
+                       )}
                     </td>
                   </tr>
                 ))}
