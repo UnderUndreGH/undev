@@ -21,6 +21,7 @@ CREATE TABLE "ai_settings" (
   "id"                              INTEGER PRIMARY KEY CHECK ("id" = 1),
   "enabled"                         BOOLEAN NOT NULL DEFAULT false,
   "default_provider"                TEXT NULL,
+  "system_prompt_content"           TEXT NULL,
   "monthly_token_budget_in"         INTEGER NOT NULL DEFAULT 5000000,
   "monthly_token_budget_out"        INTEGER NOT NULL DEFAULT 1000000,
   "per_incident_token_cap_in"       INTEGER NOT NULL DEFAULT 100000,
@@ -42,8 +43,8 @@ CREATE TABLE "ai_provider_keys" (
   "endpoint_url"          TEXT NULL,
   "api_key_encrypted"     TEXT NOT NULL,
   "is_active"             BOOLEAN NOT NULL DEFAULT true,
-  "rate_card_input_per_mtok"  REAL NULL,
-  "rate_card_output_per_mtok" REAL NULL,
+  "rate_card_input_per_mtok"  NUMERIC NULL,
+  "rate_card_output_per_mtok" NUMERIC NULL,
   "created_at"            TEXT NOT NULL DEFAULT to_char(NOW() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
   "rotated_at"            TEXT NULL
 );
@@ -72,7 +73,7 @@ CREATE TABLE "ai_conversations" (
   "confidence"              TEXT NULL CHECK ("confidence" IS NULL OR "confidence" IN ('high', 'medium', 'low')),
   "tokens_in"               INTEGER NOT NULL DEFAULT 0,
   "tokens_out"              INTEGER NOT NULL DEFAULT 0,
-  "est_cost_usd"            REAL NOT NULL DEFAULT 0,
+  "est_cost_usd"            NUMERIC NOT NULL DEFAULT 0,
   "created_at"              TEXT NOT NULL DEFAULT to_char(NOW() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
   "updated_at"              TEXT NOT NULL DEFAULT to_char(NOW() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
   "archived_at"             TEXT NULL

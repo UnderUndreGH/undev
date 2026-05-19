@@ -26,6 +26,7 @@ Role: `ai:viewer`.
 {
   "enabled": false,
   "defaultProvider": null,
+  "systemPromptContent": null,
   "monthlyTokenBudgetIn": 5000000,
   "monthlyTokenBudgetOut": 1000000,
   "perIncidentTokenCapIn": 100000,
@@ -180,7 +181,7 @@ Role: `ai:operator`.
 - `409`: In-flight conversation exists for same target (returns existing conversation ID)
 - `402`: Monthly budget exhausted
 - `503`: Global kill switch engaged
-- `503`: Provider unreachable
+- `502`: Provider unreachable
 
 ### `GET /api/ai/conversations`
 

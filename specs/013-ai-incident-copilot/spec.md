@@ -583,7 +583,7 @@ giving consistent advice and learn from accumulated context.
   in-flight conversations).
 - **FR-002**: New singleton table `ai_settings` (CHECK `id = 1`, following
   `notification_settings` pattern): `enabled BOOLEAN DEFAULT false`,
-  `default_provider TEXT NULL`, `monthly_token_budget_in INTEGER`,
+  `default_provider TEXT NULL`, `system_prompt_content TEXT NULL`, `monthly_token_budget_in INTEGER`,
   `monthly_token_budget_out INTEGER`, `per_incident_token_cap_in INTEGER`,
   `per_incident_token_cap_out INTEGER`, `global_tool_use_enabled BOOLEAN
   DEFAULT true`, `global_kill_switch_engaged BOOLEAN DEFAULT false`,
@@ -615,7 +615,7 @@ giving consistent advice and learn from accumulated context.
   cap_exhausted | aborted_by_kill_switch | provider_rate_limited`),
   `created_at`, `updated_at`, `archived_at NULL`, `prior_conversation_id
   TEXT NULL` (for "re-analyze same target" linkage),
-  `tokens_in INTEGER`, `tokens_out INTEGER`, `est_cost_usd REAL`.
+  `tokens_in INTEGER`, `tokens_out INTEGER`, `est_cost_usd NUMERIC`.
 - **FR-008**: New table `ai_messages`: `id TEXT PK`, `conversation_id`
   FK, `role TEXT` (`system | user | assistant | tool`), `seq INTEGER`
   (per-conversation order), `content_text TEXT`, `content_meta JSONB`
@@ -969,6 +969,7 @@ giving consistent advice and learn from accumulated context.
 - `id INTEGER PK CHECK (id = 1)`
 - `enabled BOOLEAN NOT NULL DEFAULT false`
 - `default_provider TEXT NULL`
+- `system_prompt_content TEXT NULL`
 - `monthly_token_budget_in INTEGER NOT NULL DEFAULT 5000000`
 - `monthly_token_budget_out INTEGER NOT NULL DEFAULT 1000000`
 - `per_incident_token_cap_in INTEGER NOT NULL DEFAULT 100000`
@@ -1004,7 +1005,7 @@ giving consistent advice and learn from accumulated context.
 - `prior_conversation_id TEXT NULL REFERENCES ai_conversations(id)` (for re-analysis linkage)
 - `tokens_in INTEGER NOT NULL DEFAULT 0`
 - `tokens_out INTEGER NOT NULL DEFAULT 0`
-- `est_cost_usd REAL NOT NULL DEFAULT 0`
+- `est_cost_usd NUMERIC NOT NULL DEFAULT 0`
 - `created_at`, `updated_at`, `archived_at NULL`
 
 ### `ai_messages` (new)
