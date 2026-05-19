@@ -5,22 +5,23 @@
 ## Phase 1: Setup
 
 - [ ] T001 [SETUP] Install npm dependencies: `ai`, `@ai-sdk/anthropic`, `@ai-sdk/openai`, `@ai-sdk/openai-compatible` in `devops-app/` (requires user approval)
-- [ ] T002 [DB] Create migration `devops-app/server/db/migrations/0013_ai_incident_copilot.sql` with all 7 new tables + 2 ALTER TABLE statements per data-model.md
-- [ ] T003 [DB] Update Drizzle schema `devops-app/server/db/schema.ts` — add `aiSettings`, `aiProviderKeys`, `aiConversations`, `aiMessages`, `aiToolCalls`, `aiDismissedFindings`, `aiComposeReviewCache` tables + modify `servers` (2 cols) and `scriptRuns` (3 cols)
+- [ ] T002 [DB] Create migration `devops-app/server/db/migrations/0013_ai_incident_copilot.sql` with all 7 new tables + 2 ALTER TABLE statements per data-model.md (use JSONB for structured columns, include `tokens_reserved`, `max_conversation_duration_minutes`, and FTS index on hypothesis)
+- [ ] T003 [DB] Update Drizzle schema `devops-app/server/db/schema.ts` — add `aiSettings`, `aiProviderKeys`, `aiConversations`, `aiMessages`, `aiToolCalls`, `aiDismissedFindings`, `aiComposeReviewCache` tables + modify `servers` (2 cols) and `scriptRuns` (3 cols) — ensure types match data-model.md (JSONB, enums)
 - [ ] T004 [DB] Update migration journal `devops-app/server/db/migrations/meta/_journal.json` — add entry idx 13 for `0013_ai_incident_copilot`
 - [ ] T005 [BE] Add `reversible: boolean` field to `ScriptManifestEntry` type and set explicit values on all 19 entries in `devops-app/server/scripts-manifest.ts` per data-model.md with Zod validation
+- [ ] T005a [BE] Update `AppError` factories for new AI error classes: `budget_exhausted`, `kill_switch_engaged`, `aborted_by_timeout`, `master_key_unavailable`
 
 ## Phase 2: Foundational (AI core services)
 
 - [ ] T006 [BE] Create `devops-app/server/services/ai/providers.ts` — `resolveModel()` function mapping provider config to Vercel AI SDK model instances (anthropic/openai/ollama) with typed inputs/outputs
-- [ ] T007 [BE] Create `devops-app/server/lib/mask-context-document.ts` — regex-based secret masking + prompt-injection-safe source delimiters for free-text LLM context (sk-*, ghp_*, AKIA*, -----BEGIN*, password=*) with typed inputs/outputs
+- [ ] T007 [BE] Create `devops-app/server/lib/mask-context-document.ts` — regex-based secret masking + prompt-injection-safe source delimiters for free-text LLM context (sk-*, ghp_*, AKIA*, -----BEGIN*, password=*) with typed inputs/outputs; include sanitization of XML-like tags (`</?context-source`) from untrusted input
 - [ ] T008 [BE] Create `devops-app/server/lib/ai-tool-registry.ts` — `manifestToAiTools()` converting ScriptManifestEntry[] to Vercel AI SDK tool definitions with dangerLevel/reversible metadata in descriptions
 - [ ] T009 [BE] Create `devops-app/server/services/ai/system-prompt.ts` — system prompt resolution logic (DB-first with TS fallback) per §15.1, including untrusted-context instructions, confidence rubric, and tool metadata guidance
 - [ ] T010 [BE] Create `devops-app/server/services/ai/budget-enforcer.ts` — monthly token budget check + per-incident cap enforcement + conservative token reservation/reconciliation with typed inputs/outputs
 - [ ] T011 [BE] Create `devops-app/server/services/ai/context-aggregator.ts` — read-only query fanout across audit_entries (100), app_health_history (50), script_runs (5), deployments (5), app_cert_events (20) with maskContextDocument() applied before output and token-size truncation metadata
 - [ ] T012 [BE] Create `devops-app/server/services/ai/sandbox-fixtures.ts` — `Record<manifestId, CannedResponse>` with generic fallback `{ status: "ok", note: "dry-run", exitCode: 0 }`
-- [ ] T013 [BE] Create `devops-app/server/services/ai/incident-analyzer.ts` — core `streamText()` orchestration: create conversation row, aggregate context, retry transient provider errors, stream via WS channel `ai:<conversationId>`, persist messages, handle cap/kill-switch abort with typed inputs/outputs
-- [ ] T014 [BE] Extend `devops-app/server/lib/audit-actions.ts` — add 26 new `ai.*` audit action types with Zod payload schemas per data-model.md
+- [ ] T013 [BE] Create `devops-app/server/services/ai/incident-analyzer.ts` — core `streamText()` orchestration: create conversation row with `tokens_reserved`, aggregate context, retry transient provider errors, stream via WS channel `ai:<conversationId>`, persist messages, handle cap/kill-switch/timeout abort with typed inputs/outputs; include `max_conversation_duration` wall-clock safety net
+- [ ] T014 [BE] Extend `devops-app/server/lib/audit-actions.ts` — add 27 new `ai.*` audit action types with Zod payload schemas per data-model.md (added `aborted_by_timeout`)
 - [ ] T015 [BE] Extend `devops-app/server/lib/event-catalogue.ts` — add 6 new notification triggers per data-model.md
 - [ ] T016 [BE] Create `devops-app/server/lib/compose-static-lint.ts` — 7 static lint rules (latest tag, reserved ports, missing healthcheck, plaintext secrets, privileged, dangerous mounts, missing depends_on) with typed inputs/outputs
 - [ ] T017 [BE] Unit test `devops-app/tests/unit/compose-static-lint.test.ts` — all 7 rules × pass/fail cases
@@ -63,7 +64,7 @@
 
 **Goal**: Push triggers automatically start AI analysis on qualifying events. 5-min dedup window.
 
-- [ ] T041 [BE] [US3] Create `devops-app/server/services/ai/push-subscriber.ts` — `onEvent(eventType, context)` with settings/preferences/kill-switch/system-rate-limit checks, 5-min rolling dedup map per `(target_kind, target_id, event_class)`, absorb-in-flight vs spawn-new-post-terminal logic per FR-017
+- [ ] T041 [BE] [US3] Create `devops-app/server/services/ai/push-subscriber.ts` — `onEvent(eventType, context)` with settings/preferences/kill-switch/system-rate-limit checks, 5-min rolling dedup map per `(target_kind, target_id, event_class)`, absorb-in-flight vs spawn-new-post-terminal logic per FR-017; ensure concurrency-safe check-then-set via synchronous critical section (no `await` during dedup logic)
 - [ ] T042 [BE] [US3] Wire push subscriber calls into existing event-emitting code paths: health-poller RED transition, deploy failure handlers, cert sweep, script failure (dangerLevel ≥ medium) — add `aiPushSubscriber.onEvent()` calls at each site
 - [ ] T043 [FE] [US3] Create `devops-app/client/components/ai/AiBadge.tsx` — "AI analyzed — click to view" badge linking to `/incidents/:id`
 - [ ] T044 [FE] [US3] Mount AiBadge on AppPage, ServerPage, RunDetail when a push-triggered conversation exists for the target
