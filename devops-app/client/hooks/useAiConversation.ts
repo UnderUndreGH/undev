@@ -15,6 +15,9 @@ export interface AiToolCall {
   manifestId: string;
   paramsJson: any;
   status: string;
+  dangerLevel: 'high' | 'medium' | 'low';
+  targetServerName: string | null;
+  targetAppName: string | null;
 }
 
 export interface AiConversation {

@@ -1,4 +1,5 @@
-import { streamText, type ToolCallPart, type ToolResultPart } from "ai";
+import { streamText, generateObject, type ToolCallPart, type ToolResultPart } from "ai";
+import { z } from "zod";
 import { eq, sql } from "drizzle-orm";
 import { db } from "../../db/index.js";
 import {
@@ -7,6 +8,7 @@ import {
   aiProviderKeys,
   aiSettings,
   aiToolCalls,
+  auditEntries,
 } from "../../db/schema.js";
 import { resolveModel } from "./providers.js";
 import { aggregateContext } from "./context-aggregator.js";
@@ -22,12 +24,20 @@ import { logger } from "../../lib/logger.js";
 import { AppError } from "../../lib/app-error.js";
 import { randomUUID } from "node:crypto";
 
+async function nextSeq(conversationId: string): Promise<number> {
+  const [row] = await db
+    .select({ maxSeq: sql<number>`coalesce(max(${aiMessages.seq}), -1)` })
+    .from(aiMessages)
+    .where(eq(aiMessages.conversationId, conversationId));
+  return (row?.maxSeq ?? -1) + 1;
+}
+
 /**
  * Feature 013: Orchestrates AI incident analysis.
  * Handles context aggregation, LLM streaming, budget enforcement, and WS notification.
  */
 export async function runIncidentAnalysis(conversationId: string) {
-  logger.info({ ctx: "incident-analyzer", conversationId }, "Starting AI analysis");
+  logger.info({ ctx: "ai:incident-analyzer", conversationId }, "Starting AI analysis");
 
   // 1. Load conversation and settings
   const [conversation] = await db
@@ -57,7 +67,27 @@ export async function runIncidentAnalysis(conversationId: string) {
   }
 
   // Reserve tokens (conservative estimate: per-incident cap)
-  await reserveTokens(conversationId, settings.perIncidentTokenCapIn);
+  try {
+    await reserveTokens(conversationId, settings.perIncidentTokenCapIn);
+  } catch (err) {
+    await db.update(aiConversations)
+      .set({ status: "error", updatedAt: new Date().toISOString() })
+      .where(eq(aiConversations.id, conversationId));
+    logger.error({ ctx: "ai:incident-analyzer", err, conversationId }, "Reserve tokens failed");
+    try {
+      await db.insert(auditEntries).values({
+        id: randomUUID(),
+        userId: "system",
+        action: "ai.analysis_failed",
+        targetType: "ai_conversation",
+        targetId: conversationId,
+        details: JSON.stringify({ reason: "reserve_tokens_failed" }),
+        result: "failure",
+        timestamp: new Date().toISOString(),
+      });
+    } catch { /* audit best-effort */ }
+    throw AppError.internal("Failed to reserve tokens");
+  }
 
   // 3. Resolve model and context
   const [providerKey] = await db
@@ -71,7 +101,7 @@ export async function runIncidentAnalysis(conversationId: string) {
   }
 
   const model = resolveModel(providerKey);
-  const systemPrompt = await resolveSystemPrompt();
+  const systemPrompt = await resolveSystemPrompt(conversationId);
   const contextDocument = await aggregateContext(
     conversation.targetKind,
     conversation.targetId,
@@ -83,7 +113,7 @@ export async function runIncidentAnalysis(conversationId: string) {
     id: userMsgId,
     conversationId,
     role: "user",
-    seq: 0,
+    seq: await nextSeq(conversationId),
     contentText: contextDocument,
     createdAt: new Date().toISOString(),
   });
@@ -95,12 +125,13 @@ export async function runIncidentAnalysis(conversationId: string) {
   
   // Wall-clock safety net
   const timeoutId = setTimeout(() => {
-    logger.warn({ ctx: "incident-analyzer", conversationId }, "Analysis timed out");
+    logger.warn({ ctx: "ai:incident-analyzer", conversationId }, "Analysis timed out");
     abortController.abort();
     db.update(aiConversations)
       .set({ status: "aborted_by_timeout" })
       .where(eq(aiConversations.id, conversationId))
-      .execute();
+      .execute()
+      .catch((err) => logger.error({ ctx: "ai:incident-analyzer", err, conversationId }, "Timeout status update failed"));
   }, settings.maxConversationDurationMinutes * 60 * 1000);
 
   try {
@@ -114,27 +145,47 @@ export async function runIncidentAnalysis(conversationId: string) {
 
         clearTimeout(timeoutId);
         
-        // Final updates
-        const hypothesis = extractHypothesis(text);
-        const confidence = extractConfidence(text);
-        
+        // C11: Use structured output instead of regex
+        let hypothesis: string | null = null;
+        let confidence: 'high' | 'medium' | 'low' | null = null;
+
+        try {
+          const structured = await generateObject({
+            model,
+            system: systemPrompt,
+            prompt: `Extract the structured analysis from this incident report. If the report contains a hypothesis and confidence level, extract them. Otherwise, provide a summary as hypothesis with low confidence.\n\nIncident Report:\n${text}`,
+            schema: z.object({
+              hypothesis: z.string(),
+              confidence: z.enum(['high', 'medium', 'low']),
+              evidence: z.array(z.string()),
+              recommended_actions: z.array(z.string()),
+            }),
+          });
+          hypothesis = structured.object.hypothesis;
+          confidence = structured.object.confidence;
+        } catch (err) {
+          logger.warn({ ctx: "ai:incident-analyzer", conversationId, err }, "Structured extraction failed, using text fallback");
+          hypothesis = text.slice(0, 200).trim() + (text.length > 200 ? "..." : "");
+          confidence = null;
+        }
+
         await db.update(aiConversations)
           .set({
             status: "completed",
             hypothesis,
-            confidence: confidence as any,
+            confidence,
             updatedAt: new Date().toISOString(),
           })
           .where(eq(aiConversations.id, conversationId));
 
-        await reconcileTokens(conversationId, usage.inputTokens || 0, usage.outputTokens || 0);
+        await reconcileTokens(conversationId, usage.inputTokens ?? 0, usage.outputTokens ?? 0);
         
         channelManager.broadcast(wsChannel, { 
           type: "complete", 
-          usage: { inputTokens: usage.inputTokens || 0, outputTokens: usage.outputTokens || 0 } 
+          usage: { inputTokens: usage.inputTokens ?? 0, outputTokens: usage.outputTokens ?? 0 } 
         });
         
-        logger.info({ ctx: "incident-analyzer", conversationId, usage }, "Analysis completed");
+        logger.info({ ctx: "ai:incident-analyzer", conversationId, usage }, "Analysis completed");
       },
     });
 
@@ -150,7 +201,7 @@ export async function runIncidentAnalysis(conversationId: string) {
       const manifestId = aiToolNameToManifestId(tc.toolName);
       
       if (!manifestId) {
-        logger.error({ ctx: "incident-analyzer", toolName: tc.toolName }, "Unknown tool proposed by LLM");
+        logger.error({ ctx: "ai:incident-analyzer", toolName: tc.toolName }, "Unknown tool proposed by LLM");
         continue;
       }
 
@@ -162,6 +213,20 @@ export async function runIncidentAnalysis(conversationId: string) {
         status: "proposed",
         createdAt: new Date().toISOString(),
       });
+
+      // H4: Emit audit for tool call proposal
+      try {
+        await db.insert(auditEntries).values({
+          id: randomUUID(),
+          userId: "system",
+          action: "ai.tool_call_proposed",
+          targetType: "ai_tool_call",
+          targetId: toolCallId,
+          details: JSON.stringify({ manifestId, conversationId, params: (tc as any).args }),
+          result: "success",
+          timestamp: new Date().toISOString(),
+        });
+      } catch { /* audit best-effort */ }
 
       channelManager.broadcast(wsChannel, { 
         type: "tool_call", 
@@ -175,7 +240,7 @@ export async function runIncidentAnalysis(conversationId: string) {
       id: randomUUID(),
       conversationId,
       role: "assistant",
-      seq: 1,
+      seq: await nextSeq(conversationId),
       contentText: assistantText,
       createdAt: new Date().toISOString(),
     });
@@ -187,7 +252,7 @@ export async function runIncidentAnalysis(conversationId: string) {
        return;
     }
     
-    logger.error({ ctx: "incident-analyzer", conversationId, err }, "Analysis failed");
+    logger.error({ ctx: "ai:incident-analyzer", conversationId, err }, "Analysis failed");
     
     await db.update(aiConversations)
       .set({ status: "error", updatedAt: new Date().toISOString() })
@@ -201,26 +266,97 @@ export async function runIncidentAnalysis(conversationId: string) {
 }
 
 /**
- * Regex-based extraction of hypothesis from LLM response.
- * Expects "## Hypothesis\n[text]" format.
+ * H5 step 2: Resume a conversation after a tool call has been executed.
+ * Inserts the tool result as a message and re-invokes the LLM for further analysis.
+ * Step 3 (wiring into dispatcher) is deferred.
  */
-function extractHypothesis(text: string): string | null {
-  const match = text.match(/## Hypothesis\s*\n([\s\S]+?)(?:\n\n|\n\*\*|$)/i);
-  if (match && match[1]) {
-    return match[1].trim();
-  }
-  // Fallback: first 200 chars
-  return text.slice(0, 200).trim() + (text.length > 200 ? "..." : "");
-}
+export async function resumeConversationWithToolResult(
+  conversationId: string,
+  toolCallId: string,
+  resultPayload: unknown,
+): Promise<void> {
+  logger.info({ ctx: "ai:incident-analyzer", conversationId, toolCallId }, "Resuming conversation with tool result");
 
-/**
- * Regex-based extraction of confidence level.
- * Expects "**Confidence**: [high|medium|low]" format.
- */
-function extractConfidence(text: string): string | null {
-  const match = text.match(/\*\*Confidence\*\*:\s*(high|medium|low)/i);
-  if (match && match[1]) {
-    return match[1].toLowerCase();
+  // Insert tool result message
+  const toolSeq = await nextSeq(conversationId);
+  await db.insert(aiMessages).values({
+    id: randomUUID(),
+    conversationId,
+    role: "tool",
+    seq: toolSeq,
+    contentText: JSON.stringify(resultPayload),
+    contentMeta: { toolCallId },
+    createdAt: new Date().toISOString(),
+  });
+
+  // Load conversation + settings + provider for re-invocation
+  const [conversation] = await db
+    .select()
+    .from(aiConversations)
+    .where(eq(aiConversations.id, conversationId))
+    .limit(1);
+  if (!conversation) throw AppError.notFound(`Conversation ${conversationId} not found`);
+
+  const [settings] = await db
+    .select()
+    .from(aiSettings)
+    .where(eq(aiSettings.id, 1))
+    .limit(1);
+  if (!settings?.enabled) throw AppError.forbidden("AI Copilot is disabled");
+
+  const [providerKey] = await db
+    .select()
+    .from(aiProviderKeys)
+    .where(eq(aiProviderKeys.id, conversation.providerKeyId))
+    .limit(1);
+  if (!providerKey) throw AppError.notFound(`Provider key ${conversation.providerKeyId} not found`);
+
+  const model = resolveModel(providerKey);
+  const systemPrompt = await resolveSystemPrompt(conversationId);
+
+  // Load full message history
+  const messageHistory = await db
+    .select()
+    .from(aiMessages)
+    .where(eq(aiMessages.conversationId, conversationId))
+    .orderBy(aiMessages.seq);
+
+  const wsChannel = `ai:${conversationId}`;
+
+  try {
+    const result = streamText({
+      model,
+      system: systemPrompt,
+      messages: messageHistory.map(m => ({
+        role: m.role as "user" | "assistant" | "tool",
+        content: m.contentText ?? "",
+      })) as any,
+      tools: manifestToAiTools(),
+      onFinish: async ({ usage, text }) => {
+        // Persist additional assistant turn
+        const assistantSeq = await nextSeq(conversationId);
+        await db.insert(aiMessages).values({
+          id: randomUUID(),
+          conversationId,
+          role: "assistant",
+          seq: assistantSeq,
+          contentText: text,
+          createdAt: new Date().toISOString(),
+        });
+
+        await reconcileTokens(conversationId, usage.inputTokens ?? 0, usage.outputTokens ?? 0);
+        channelManager.broadcast(wsChannel, { type: "complete", usage: { inputTokens: usage.inputTokens ?? 0, outputTokens: usage.outputTokens ?? 0 } });
+        logger.info({ ctx: "ai:incident-analyzer", conversationId, usage }, "Resumed analysis completed");
+      },
+    });
+
+    for await (const delta of result.textStream) {
+      channelManager.broadcast(wsChannel, { type: "delta", content: delta });
+    }
+  } catch (err) {
+    logger.error({ ctx: "ai:incident-analyzer", conversationId, err }, "Resumed analysis failed");
+    await db.update(aiConversations)
+      .set({ status: "error", updatedAt: new Date().toISOString() })
+      .where(eq(aiConversations.id, conversationId));
   }
-  return null;
 }

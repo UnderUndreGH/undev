@@ -1,12 +1,13 @@
 import { Router } from "express";
 import { z } from "zod";
-import { eq, and } from "drizzle-orm";
+import { eq, and, desc } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { aiProviderKeys } from "../db/schema.js";
 import { AppError } from "../lib/app-error.js";
 import { seal } from "../lib/envelope-cipher.js";
 import { generateText } from "ai";
 import { resolveModel } from "../services/ai/providers.js";
+import { getOperatorId } from "../lib/get-operator-id.js";
 import { randomUUID } from "node:crypto";
 
 export const aiProvidersRouter = Router();
@@ -38,9 +39,7 @@ aiProvidersRouter.get("/", async (req, res) => {
 
 // POST /api/ai/providers
 aiProvidersRouter.post("/", async (req, res) => {
-  if ((req as any).userId !== "admin") {
-    throw AppError.forbidden();
-  }
+  const userId = getOperatorId(req);
 
   const parsed = providerSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -71,9 +70,7 @@ aiProvidersRouter.post("/", async (req, res) => {
 
 // DELETE /api/ai/providers/:id
 aiProvidersRouter.delete("/:id", async (req, res) => {
-  if ((req as any).userId !== "admin") {
-    throw AppError.forbidden();
-  }
+  const userId = getOperatorId(req);
 
   await db.update(aiProviderKeys)
     .set({ isActive: false })
@@ -96,12 +93,12 @@ aiProvidersRouter.post("/:id/test", async (req, res) => {
 
   const model = resolveModel(providerKey);
   const start = performance.now();
-    try {
-      await generateText({
-        model,
-        prompt: 'Reply with "ok".',
-      } as any);
-      res.json({ ok: true, latencyMs: Math.round(performance.now() - start) });
+  try {
+    await generateText({
+      model,
+      prompt: 'Reply with "ok".',
+    });
+    res.json({ ok: true, latencyMs: Math.round(performance.now() - start) });
 
   } catch (err) {
     res.json({ ok: false, latencyMs: Math.round(performance.now() - start), error: String(err) });

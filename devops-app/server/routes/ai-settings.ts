@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { aiSettings } from "../db/schema.js";
 import { AppError } from "../lib/app-error.js";
-import { auditEntries } from "../db/schema.js"; // For manual audit until middleware updated
+import { getOperatorId } from "../lib/get-operator-id.js";
 import { randomUUID } from "node:crypto";
 
 export const aiSettingsRouter = Router();
@@ -34,10 +34,8 @@ aiSettingsRouter.get("/", async (req, res) => {
 
 // PUT /api/ai/settings
 aiSettingsRouter.put("/", async (req, res) => {
-  // role check: only admin can change settings
-  if ((req as any).userId !== "admin") {
-    throw AppError.forbidden("Only admins can modify AI settings");
-  }
+  // requireAuth middleware guarantees userId is set
+  const userId = getOperatorId(req);
 
   const parsed = settingsUpdateSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -57,9 +55,8 @@ aiSettingsRouter.put("/", async (req, res) => {
 
 // PUT /api/ai/settings/kill-switch
 aiSettingsRouter.put("/kill-switch", async (req, res) => {
-  if ((req as any).userId !== "admin") {
-    throw AppError.forbidden("Only admins can engage kill switch");
-  }
+  // requireAuth middleware guarantees userId is set
+  const userId = getOperatorId(req);
 
   const schema = z.object({ engaged: z.boolean() });
   const parsed = schema.safeParse(req.body);

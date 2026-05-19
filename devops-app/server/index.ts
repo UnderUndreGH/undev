@@ -50,6 +50,8 @@ import { aiToolCallsRouter } from "./routes/ai-tool-calls.js";
 import { aiComposeReviewRouter } from "./routes/ai-compose-review.js";
 import { aiSpendRouter } from "./routes/ai-spend.js";
 import { startArchiverCron } from "./services/ai/archiver.js";
+import { startPushDedupCleanup, stopPushDedupCleanup } from "./services/ai/push-subscriber.js";
+import { startChallengeCleanup, stopChallengeCleanup } from "./routes/ai-tool-calls.js";
 import { initInterruptedDeploysCache } from "./services/interrupted-deploys-scanner.js";
 
 // ── Crash-shield (incident 2026-05-03) ──────────────────────────────────────
@@ -228,6 +230,10 @@ async function startup() {
   // Feature 013: AI conversation archiver cron.
   startArchiverCron();
 
+  // Feature 013: Push dedup cleanup + challenge cleanup (60s interval).
+  startPushDedupCleanup();
+  startChallengeCleanup();
+
   // Step 1d: Graceful shutdown — ALWAYS register, whether or not the lock
   // feature is active. The pool must drain on SIGTERM regardless so we don't
   // leak Postgres backends on container shutdown. The lock-release loop is a
@@ -237,6 +243,8 @@ async function startup() {
       scriptsRunner.stop();
       stopDriftCron();
       stopOrphanCleanupCron();
+      stopPushDedupCleanup();
+      stopChallengeCleanup();
       deployLock.stop();
       const ids = deployLock.heldServerIds();
       const releases = Promise.allSettled(

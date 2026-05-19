@@ -1,4 +1,4 @@
-import { eq, gte, sql } from "drizzle-orm";
+import { eq, gte, sql, isNull, and } from "drizzle-orm";
 import { db } from "../../db/index.js";
 import { aiConversations, aiProviderKeys, aiSettings } from "../../db/schema.js";
 import { AppError } from "../../lib/app-error.js";
@@ -34,7 +34,7 @@ export async function checkMonthlyBudget(): Promise<{
       totalOut: sql<number>`coalesce(sum(${aiConversations.tokensOut}), 0)`,
     })
     .from(aiConversations)
-    .where(gte(aiConversations.createdAt, monthStart));
+    .where(and(gte(aiConversations.createdAt, monthStart), isNull(aiConversations.archivedAt)));
 
   const usedIn = Number(usage?.totalIn ?? 0);
   const usedOut = Number(usage?.totalOut ?? 0);
@@ -42,7 +42,7 @@ export async function checkMonthlyBudget(): Promise<{
 
   if (!allowed) {
     logger.info(
-      { ctx: "budget-enforcer", usedIn, usedOut, budgetIn, budgetOut },
+      { ctx: "ai:budget-enforcer", usedIn, usedOut, budgetIn, budgetOut },
       "Monthly token budget exhausted",
     );
   }
@@ -63,7 +63,7 @@ export async function reserveTokens(
     .where(eq(aiConversations.id, conversationId));
 
   logger.info(
-    { ctx: "budget-enforcer", conversationId, tokens },
+    { ctx: "ai:budget-enforcer", conversationId, tokens },
     "Tokens reserved",
   );
 }
@@ -107,7 +107,7 @@ export async function reconcileTokens(
 
   logger.info(
     {
-      ctx: "budget-enforcer",
+      ctx: "ai:budget-enforcer",
       conversationId,
       actualTokensIn,
       actualTokensOut,

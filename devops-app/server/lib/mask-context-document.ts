@@ -4,8 +4,8 @@
 
 // Patterns to mask in context documents (logs, audit details, etc.)
 const SECRET_PATTERNS = [
-  { name: "Anthropic API Key", regex: /sk-ant-api03-[a-zA-Z0-9\-_]{93,}/g },
-  { name: "OpenAI API Key", regex: /sk-[a-zA-Z0-9]{48,}/g },
+  { name: "Anthropic API Key", regex: /sk-ant-[a-zA-Z0-9\-_]{93,}/g },
+  { name: "OpenAI API Key", regex: /sk-(?:proj-|svcacct-)?[a-zA-Z0-9_-]{20,}/g },
   { name: "GitHub PAT", regex: /ghp_[a-zA-Z0-9]{36,}/g },
   { name: "AWS Access Key", regex: /AKIA[0-9A-Z]{16}/g },
   { name: "Private Key", regex: /-----BEGIN [A-Z ]+ PRIVATE KEY-----[\s\S]+?-----END [A-Z ]+ PRIVATE KEY-----/g },
@@ -15,6 +15,11 @@ const SECRET_PATTERNS = [
   { name: "JWT", regex: /eyJ[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}/g },
 ];
 
+export interface MaskResult {
+  masked: string;
+  redactions: Record<string, number>;
+}
+
 /**
  * Scrubs known secret patterns and sanitizes XML-like injection tags from unstructured text.
  * Wraps the source in delimiters that the system prompt treats as untrusted.
@@ -23,13 +28,14 @@ export function maskContextDocument(
   content: string,
   sourceType: string,
   isTrusted: boolean = false,
-): string {
+): MaskResult {
   let masked = content;
+  const redactions: Record<string, number> = {};
 
   // 1. Mask secrets
-  for (const { regex } of SECRET_PATTERNS) {
+  for (const { name, regex } of SECRET_PATTERNS) {
     masked = masked.replace(regex, (match) => {
-      // Keep a small hint for context if useful, but here we go full mask
+      redactions[name] = (redactions[name] || 0) + 1;
       return `***[REDACTED]***`;
     });
   }
@@ -40,7 +46,8 @@ export function maskContextDocument(
   masked = masked.replace(/<context-source/gi, "[INJECTION_ATTEMPT_STRIPPED]");
 
   // 3. Wrap in delimiters
-  return `<context-source type="${sourceType}" trusted="${isTrusted}">\n${masked}\n</context-source>`;
+  const wrapped = `<context-source type="${sourceType}" trusted="${isTrusted}">\n${masked}\n</context-source>`;
+  return { masked: wrapped, redactions };
 }
 
 /**
@@ -49,6 +56,6 @@ export function maskContextDocument(
 export function containsHighConfidenceSecrets(content: string): boolean {
   // For now, any match is a warning, but we could split SECRET_PATTERNS into tiers.
   // Principle: blocking thresholds are for patterns with ~0 false positives.
-  const blockingRegex = /sk-ant-api03-|ghp_|AKIA[0-9A-Z]{16}|-----BEGIN/g;
+  const blockingRegex = /sk-(?:proj-|svcacct-)?|ghp_|AKIA[0-9A-Z]{16}|-----BEGIN/g;
   return blockingRegex.test(content);
 }

@@ -13,7 +13,17 @@ export function manifestToAiTools() {
     const toolName = entry.id.replace(/\//g, "_");
 
     tools[toolName] = tool({
-      description: `${entry.description}. Danger: ${entry.dangerLevel ?? "low"}. Reversible: ${entry.reversible ?? false}.`,
+      description: (() => {
+        const dangerNote = entry.dangerLevel === "high"
+          ? "DANGER: high — destructive action. Operator must type-confirm before execution."
+          : entry.dangerLevel === "medium"
+          ? "Caution: medium — modifies system state. Operator approval required."
+          : "Low impact — safe to propose freely.";
+        const reversibleNote = entry.reversible
+          ? "Reversible — can be undone."
+          : "IRREVERSIBLE — prefer reversible alternatives when possible.";
+        return `${entry.description} ${dangerNote} ${reversibleNote}`;
+      })(),
       parameters: entry.params,
       execute: undefined as any,
     } as any);

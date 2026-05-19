@@ -1,12 +1,14 @@
 import { Router } from "express";
 import { z } from "zod";
-import { eq, and, desc, sql } from "drizzle-orm";
+import { eq, and, desc, sql, inArray, count } from "drizzle-orm";
 import { db } from "../db/index.js";
-import { aiConversations, aiMessages, aiProviderKeys, aiSettings, aiToolCalls } from "../db/schema.js";
+import { aiConversations, aiMessages, aiProviderKeys, aiSettings, aiToolCalls, servers, applications } from "../db/schema.js";
 import { AppError } from "../lib/app-error.js";
 import { rateLimit } from "../middleware/rate-limit.js";
 import { runIncidentAnalysis } from "../services/ai/incident-analyzer.js";
+import { manifest } from "../scripts-manifest.js";
 import { randomUUID } from "node:crypto";
+import { logger } from "../lib/logger.js";
 
 export const aiConversationsRouter = Router();
 
@@ -15,26 +17,51 @@ const createConversationSchema = z.object({
   targetId: z.string().nullable(),
 });
 
+// C18: Zod schema for query filter enums
+const conversationQuerySchema = z.object({
+  trigger: z.enum(['pull', 'push']).optional(),
+  targetKind: z.enum(['app', 'server', 'deployment', 'audit_event', 'cert', 'script_run', 'manual', 'compose_review']).optional(),
+  status: z.enum(['pending', 'streaming', 'completed', 'error', 'cap_exhausted', 'aborted_by_kill_switch', 'provider_rate_limited', 'aborted_by_timeout', 'aborted_by_operator']).optional(),
+  q: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  offset: z.coerce.number().int().min(0).default(0),
+});
+
 // GET /api/ai/conversations
 aiConversationsRouter.get("/", async (req, res) => {
-  const { trigger, targetKind, status, q } = req.query;
+  const parsed = conversationQuerySchema.safeParse(req.query);
+  if (!parsed.success) {
+    throw AppError.badRequest(parsed.error.message);
+  }
+  const { trigger, targetKind, status, q, limit, offset } = parsed.data;
   const conditions = [];
-  if (trigger) conditions.push(eq(aiConversations.trigger, trigger as any));
-  if (targetKind) conditions.push(eq(aiConversations.targetKind, targetKind as any));
-  if (status) conditions.push(eq(aiConversations.status, status as any));
+  if (trigger) conditions.push(eq(aiConversations.trigger, trigger));
+  if (targetKind) conditions.push(eq(aiConversations.targetKind, targetKind));
+  if (status) conditions.push(eq(aiConversations.status, status));
   if (q) {
-     // FTS search
-     conditions.push(sql`to_tsvector('english', ${aiConversations.hypothesis}) @@ plainto_tsquery('english', ${q as string})`);
+    conditions.push(sql`to_tsvector('english', ${aiConversations.hypothesis}) @@ plainto_tsquery('english', ${q})`);
   }
 
+  const where = conditions.length > 0 ? and(...conditions) : undefined;
   const rows = await db
     .select()
     .from(aiConversations)
-    .where(conditions.length > 0 ? and(...conditions) : undefined)
+    .where(where)
     .orderBy(desc(aiConversations.createdAt))
-    .limit(50);
-    
-  res.json(rows);
+    .limit(limit)
+    .offset(offset);
+
+  // Return total count when offset is 0 for UI pagination
+  let total: number | undefined;
+  if (offset === 0) {
+    const [countRow] = await db
+      .select({ total: count() })
+      .from(aiConversations)
+      .where(where);
+    total = countRow?.total;
+  }
+
+  res.json({ rows, ...(total !== undefined ? { total } : {}) });
 });
 
 // POST /api/ai/conversations (Start analysis)
@@ -52,10 +79,31 @@ aiConversationsRouter.post("/", rateLimit({ windowMs: 60000, max: 10 }), async (
     .select()
     .from(aiProviderKeys)
     .where(eq(aiProviderKeys.isActive, true))
+    .orderBy(desc(aiProviderKeys.createdAt))
     .limit(1);
 
   if (!providerKey) {
     throw AppError.badRequest("No active AI provider configured");
+  }
+
+  // H2: Check for existing in-flight conversation for same target
+  const inFlightConditions = [
+    eq(aiConversations.targetKind, parsed.data.targetKind),
+    ...(parsed.data.targetId != null
+      ? [eq(aiConversations.targetId, parsed.data.targetId)]
+      : [sql`${aiConversations.targetId} IS NULL`]),
+    inArray(aiConversations.status, ['pending', 'streaming']),
+  ];
+  const [existing] = await db
+    .select()
+    .from(aiConversations)
+    .where(and(...inFlightConditions))
+    .limit(1);
+
+  if (existing) {
+    res.setHeader('X-Existing-Conversation', 'true');
+    res.status(200).json({ id: existing.id });
+    return;
   }
 
   const id = randomUUID();
@@ -73,7 +121,7 @@ aiConversationsRouter.post("/", rateLimit({ windowMs: 60000, max: 10 }), async (
 
   // Start background analysis
   void runIncidentAnalysis(id).catch(err => {
-    console.error(`[AI] Async analysis failure for ${id}:`, err);
+    logger.error({ ctx: "ai:conversations", err, conversationId: id }, "Async analysis failure");
   });
 
   res.status(201).json({ id });
@@ -100,9 +148,30 @@ aiConversationsRouter.get("/:id", async (req, res) => {
     .from(aiToolCalls)
     .where(eq(aiToolCalls.conversationId, req.params.id));
 
+  // C20+C22: Enrich tool calls with manifest data (dangerLevel) and target names
+  const enrichedToolCalls = await Promise.all(toolCalls.map(async tc => {
+    const entry = manifest.find(m => m.id === tc.manifestId);
+    let targetServerName: string | null = null;
+    let targetAppName: string | null = null;
+    if (tc.targetServerId) {
+      const [srv] = await db.select({ name: servers.label }).from(servers).where(eq(servers.id, tc.targetServerId)).limit(1);
+      targetServerName = srv?.name ?? null;
+    }
+    if (tc.targetAppId) {
+      const [app] = await db.select({ name: applications.name }).from(applications).where(eq(applications.id, tc.targetAppId)).limit(1);
+      targetAppName = app?.name ?? null;
+    }
+    return {
+      ...tc,
+      dangerLevel: entry?.dangerLevel ?? "low",
+      targetServerName,
+      targetAppName,
+    };
+  }));
+
   res.json({
     ...conversation,
     messages,
-    toolCalls,
+    toolCalls: enrichedToolCalls,
   });
 });

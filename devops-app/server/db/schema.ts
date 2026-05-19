@@ -461,6 +461,7 @@ export const aiConversations = pgTable("ai_conversations", {
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
   archivedAt: text("archived_at"),
+  systemPromptOverride: text("system_prompt_override"),
 }, (t) => [
   index("idx_ai_conversations_target").on(t.targetKind, t.targetId, t.createdAt),
   index("idx_ai_conversations_status").on(t.status),

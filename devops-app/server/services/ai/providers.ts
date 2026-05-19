@@ -23,9 +23,6 @@ export function resolveModel(providerKey: typeof aiProviderKeys.$inferSelect) {
       return anthropic(providerKey.modelDefault);
     case "openai":
       return openai(providerKey.modelDefault);
-
-    case "openai":
-      return openai(providerKey.modelDefault);
     case "ollama":
       return createOpenAICompatible({
         name: "ollama",

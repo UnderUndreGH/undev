@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 
 import { db } from "../../db/index.js";
-import { aiSettings } from "../../db/schema.js";
+import { aiSettings, aiConversations } from "../../db/schema.js";
 import { logger } from "../../lib/logger.js";
 
 // ── Default system prompt ────────────────────────────────────────────────
@@ -38,7 +38,23 @@ You have access to infrastructure tools. Propose actions conservatively. Always 
  * id = 1).  Falls back to `DEFAULT_SYSTEM_PROMPT` when the stored value is
  * null or an empty string.
  */
-export async function resolveSystemPrompt(): Promise<string> {
+export async function resolveSystemPrompt(conversationId?: string): Promise<string> {
+  // Per-conversation override takes precedence
+  if (conversationId) {
+    const [convo] = await db
+      .select({ systemPromptOverride: aiConversations.systemPromptOverride })
+      .from(aiConversations)
+      .where(eq(aiConversations.id, conversationId))
+      .limit(1);
+
+    const override = convo?.systemPromptOverride;
+    if (override && override.trim().length > 0) {
+      logger.info({ ctx: "ai:system-prompt", conversationId }, "Using per-conversation system prompt override");
+      return override;
+    }
+  }
+
+  // Admin DB setting
   const [row] = await db
     .select({ systemPromptContent: aiSettings.systemPromptContent })
     .from(aiSettings)
@@ -46,12 +62,12 @@ export async function resolveSystemPrompt(): Promise<string> {
     .limit(1);
 
   const stored = row?.systemPromptContent;
-
   if (stored && stored.trim().length > 0) {
-    logger.info({ ctx: "system-prompt" }, "Using custom system prompt from DB");
+    logger.info({ ctx: "ai:system-prompt" }, "Using custom system prompt from DB");
     return stored;
   }
 
-  logger.info({ ctx: "system-prompt" }, "Using default system prompt");
+  // TS fallback
+  logger.info({ ctx: "ai:system-prompt" }, "Using default system prompt");
   return DEFAULT_SYSTEM_PROMPT;
 }

@@ -7,7 +7,7 @@ import { parse as parseYaml } from "yaml";
 
 export interface LintFinding {
   rule: string;
-  severity: "error" | "warning";
+  severity: "info" | "warning" | "error";
   message: string;
   service?: string;
 }
@@ -69,6 +69,23 @@ export function lintCompose(composeYaml: string): LintFinding[] {
       }
     }
 
+    // 2b. db-ports-exposed: WARN if common DB/service ports are exposed publicly
+    if (Array.isArray(s.ports)) {
+      const DB_PORTS = [22, 3306, 5432, 6379, 9200, 9300, 11211, 27017];
+      for (const port of s.ports) {
+        const portStr = typeof port === "string" ? port : String(port.published || "");
+        const hostPort = parseInt(portStr.split(":")[0] || "");
+        if (!isNaN(hostPort) && DB_PORTS.includes(hostPort)) {
+          findings.push({
+            rule: "db-ports-exposed",
+            severity: "warning",
+            message: `Service "${name}" exposes database port ${hostPort} publicly. Use an internal network and bind to localhost only.`,
+            service: name,
+          });
+        }
+      }
+    }
+
     // 3. missing-healthcheck: WARN if no healthcheck
     if (!s.healthcheck) {
       findings.push({
@@ -85,14 +102,9 @@ export function lintCompose(composeYaml: string): LintFinding[] {
       const keys = Array.isArray(env) ? env.map(e => String(e).split('=')[0]) : Object.keys(env);
       const secretKeys = ["password", "secret", "token", "api_key", "key", "credential"];
       
-      for (const key of keys) {
-        if (key && secretKeys.some(sk => key.toLowerCase().includes(secretKeys.find(s => key.toLowerCase().includes(s)) || ""))) {
-           // This is a bit simplified, but follows the spirit
-           // Check for high-entropy values or common names
-        }
-      }
+      // C19: Removed dead/broken nested secretKeys.find inside .some() (always-true, empty body)
       
-      // More robust check:
+      // Robust check:
       const envObj = Array.isArray(env) 
         ? Object.fromEntries(env.map(e => String(e).split('=').slice(0, 2) as [string, string]))
         : env;
@@ -150,7 +162,7 @@ export function lintCompose(composeYaml: string): LintFinding[] {
         if (dbName !== name && envValues.includes(dbName)) {
           findings.push({
             rule: "missing-depends-on",
-            severity: "warning",
+            severity: "info",
             message: `Service "${name}" appears to reference database service "${dbName}" but lacks a "depends_on" declaration.`,
             service: name,
           });
