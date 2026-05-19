@@ -43,6 +43,10 @@ export const servers = pgTable("servers", {
   // unknown | needs_initialisation | initialising | ready
   setupState: text("setup_state").notNull().default("unknown"),
   createdAt: text("created_at").notNull(),
+  // ── Feature 013: AI Incident Copilot ───────────────────────────────────
+  aiReadAccess: boolean("ai_read_access").notNull().default(true),
+  // 'enabled' | 'sandbox-only' | 'disabled'
+  aiWriteAccess: text("ai_write_access").notNull().default("enabled"),
 }, (t) => [
   index("idx_servers_status_setup_state").on(t.status, t.setupState),
 ]);
@@ -362,6 +366,14 @@ export const scriptRuns = pgTable(
     outputArtifact: jsonb("output_artifact"),
     errorMessage: text("error_message"),
     logFilePath: text("log_file_path").notNull(),
+    // ── Feature 013: AI Incident Copilot ───────────────────────────────────
+    initiatedBy: text("initiated_by").notNull().default("operator"), // operator | ai_proposal
+    aiConversationId: text("ai_conversation_id").references(() => aiConversations.id, {
+      onDelete: "set null",
+    }),
+    aiToolCallId: text("ai_tool_call_id").references(() => aiToolCalls.id, {
+      onDelete: "set null",
+    }),
   },
   (t) => [
     index("idx_script_runs_server_started").on(t.serverId, t.startedAt),
@@ -395,3 +407,118 @@ export const notificationSettings = pgTable("notification_settings", {
   masterKeyCanary: text("master_key_canary"),
   updatedAt: text("updated_at").notNull(),
 });
+
+// ── Feature 013: AI Incident Copilot ───────────────────────────────────────
+
+export const aiSettings = pgTable("ai_settings", {
+  id: integer("id").primaryKey(), // CHECK (id = 1)
+  enabled: boolean("enabled").notNull().default(false),
+  defaultProvider: text("default_provider"),
+  systemPromptContent: text("system_prompt_content"),
+  monthlyTokenBudgetIn: integer("monthly_token_budget_in").notNull().default(5000000),
+  monthlyTokenBudgetOut: integer("monthly_token_budget_out").notNull().default(1000000),
+  perIncidentTokenCapIn: integer("per_incident_token_cap_in").notNull().default(100000),
+  perIncidentTokenCapOut: integer("per_incident_token_cap_out").notNull().default(20000),
+  globalToolUseEnabled: boolean("global_tool_use_enabled").notNull().default(true),
+  globalKillSwitchEngaged: boolean("global_kill_switch_engaged").notNull().default(false),
+  defaultSandbox: boolean("default_sandbox").notNull().default(false),
+  conversationRetentionDays: integer("conversation_retention_days").notNull().default(90),
+  maxConversationDurationMinutes: integer("max_conversation_duration_minutes").notNull().default(30),
+  updatedAt: text("updated_at").notNull(),
+});
+
+export const aiProviderKeys = pgTable("ai_provider_keys", {
+  id: text("id").primaryKey(),
+  provider: text("provider").notNull(), // anthropic | openai | ollama
+  modelDefault: text("model_default").notNull(),
+  endpointUrl: text("endpoint_url"),
+  apiKeyEncrypted: text("api_key_encrypted").notNull(),
+  isActive: boolean("is_active").notNull().default(true),
+  rateCardInputPerMtok: real("rate_card_input_per_mtok"),
+  rateCardOutputPerMtok: real("rate_card_output_per_mtok"),
+  createdAt: text("created_at").notNull(),
+  rotatedAt: text("rotated_at"),
+});
+
+export const aiConversations = pgTable("ai_conversations", {
+  id: text("id").primaryKey(),
+  trigger: text("trigger").notNull(), // pull | push
+  targetKind: text("target_kind").notNull(), // app | server | deployment | ...
+  targetId: text("target_id"),
+  providerKeyId: text("provider_key_id")
+    .notNull()
+    .references(() => aiProviderKeys.id),
+  model: text("model").notNull(),
+  status: text("status").notNull().default("pending"), // pending | streaming | completed | ...
+  sandboxMode: boolean("sandbox_mode").notNull().default(false),
+  priorConversationId: text("prior_conversation_id").references((): any => aiConversations.id),
+  hypothesis: text("hypothesis"),
+  confidence: text("confidence"), // high | medium | low | null
+  tokensIn: integer("tokens_in").notNull().default(0),
+  tokensOut: integer("tokens_out").notNull().default(0),
+  tokensReserved: integer("tokens_reserved").notNull().default(0),
+  estCostUsd: real("est_cost_usd").notNull().default(0),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+  archivedAt: text("archived_at"),
+}, (t) => [
+  index("idx_ai_conversations_target").on(t.targetKind, t.targetId, t.createdAt),
+  index("idx_ai_conversations_status").on(t.status),
+  index("idx_ai_conversations_archived").on(t.archivedAt),
+]);
+
+export const aiMessages = pgTable("ai_messages", {
+  id: text("id").primaryKey(),
+  conversationId: text("conversation_id")
+    .notNull()
+    .references(() => aiConversations.id, { onDelete: "cascade" }),
+  role: text("role").notNull(), // system | user | assistant | tool
+  seq: integer("seq").notNull(),
+  contentText: text("content_text").notNull(),
+  contentMeta: jsonb("content_meta"),
+  tokensIn: integer("tokens_in").notNull().default(0),
+  tokensOut: integer("tokens_out").notNull().default(0),
+  createdAt: text("created_at").notNull(),
+});
+
+export const aiToolCalls = pgTable("ai_tool_calls", {
+  id: text("id").primaryKey(),
+  conversationId: text("conversation_id")
+    .notNull()
+    .references(() => aiConversations.id, { onDelete: "cascade" }),
+  manifestId: text("manifest_id").notNull(),
+  paramsJson: jsonb("params_json").notNull(),
+  targetServerId: text("target_server_id").references(() => servers.id, { onDelete: "set null" }),
+  targetAppId: text("target_app_id").references(() => applications.id, { onDelete: "set null" }),
+  status: text("status").notNull().default("proposed"), // proposed | approved | ...
+  scriptRunId: text("script_run_id").references(() => scriptRuns.id, { onDelete: "set null" }),
+  dryRun: boolean("dry_run").notNull().default(false),
+  decidedBy: text("decided_by"),
+  createdAt: text("created_at").notNull(),
+  decidedAt: text("decided_at"),
+  executedAt: text("executed_at"),
+}, (t) => [
+  index("idx_ai_tool_calls_conversation").on(t.conversationId, t.createdAt),
+]);
+
+export const aiDismissedFindings = pgTable("ai_dismissed_findings", {
+  appId: text("app_id")
+    .notNull()
+    .references(() => applications.id, { onDelete: "cascade" }),
+  findingHash: text("finding_hash").notNull(),
+  dismissedAt: text("dismissed_at").notNull(),
+}, (t) => [
+  sql`PRIMARY KEY (${t.appId}, ${t.findingHash})`,
+]);
+
+export const aiComposeReviewCache = pgTable("ai_compose_review_cache", {
+  appId: text("app_id")
+    .notNull()
+    .references(() => applications.id, { onDelete: "cascade" }),
+  contentSha256: text("content_sha256").notNull(),
+  findingsJson: jsonb("findings_json").notNull(),
+  conversationId: text("conversation_id").references(() => aiConversations.id, { onDelete: "set null" }),
+  createdAt: text("created_at").notNull(),
+}, (t) => [
+  sql`PRIMARY KEY (${t.appId}, ${t.contentSha256})`,
+]);

@@ -20,6 +20,9 @@ const createServerSchema = z.object({
   sshPrivateKey: z.string().optional(),
   sshPassword: z.string().optional(),
   scriptsPath: z.string().default(""),
+  // Feature 013: AI access
+  aiReadAccess: z.boolean().optional(),
+  aiWriteAccess: z.enum(["enabled", "sandbox-only", "disabled"]).optional(),
   scanRoots: z
     .array(
       z

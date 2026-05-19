@@ -4,26 +4,26 @@
 
 ## Phase 1: Setup
 
-- [ ] T001 [SETUP] Install npm dependencies: `ai`, `@ai-sdk/anthropic`, `@ai-sdk/openai`, `@ai-sdk/openai-compatible` in `devops-app/` (requires user approval)
-- [ ] T002 [DB] Create migration `devops-app/server/db/migrations/0013_ai_incident_copilot.sql` with all 7 new tables + 2 ALTER TABLE statements per data-model.md (use JSONB for structured columns, include `tokens_reserved`, `max_conversation_duration_minutes`, and FTS index on hypothesis)
-- [ ] T003 [DB] Update Drizzle schema `devops-app/server/db/schema.ts` — add `aiSettings`, `aiProviderKeys`, `aiConversations`, `aiMessages`, `aiToolCalls`, `aiDismissedFindings`, `aiComposeReviewCache` tables + modify `servers` (2 cols) and `scriptRuns` (3 cols) — ensure types match data-model.md (JSONB, enums)
-- [ ] T004 [DB] Update migration journal `devops-app/server/db/migrations/meta/_journal.json` — add entry idx 13 for `0013_ai_incident_copilot`
-- [ ] T005 [BE] Add `reversible: boolean` field to `ScriptManifestEntry` type and set explicit values on all 19 entries in `devops-app/server/scripts-manifest.ts` per data-model.md with Zod validation
-- [ ] T005a [BE] Update `AppError` factories for new AI error classes: `budget_exhausted`, `kill_switch_engaged`, `aborted_by_timeout`, `master_key_unavailable`
+- [X] T001 [SETUP] Install npm dependencies: `ai`, `@ai-sdk/anthropic`, `@ai-sdk/openai`, `@ai-sdk/openai-compatible` in `devops-app/` (requires user approval)
+- [X] T002 [DB] Create migration `devops-app/server/db/migrations/0013_ai_incident_copilot.sql` with all 7 new tables + 2 ALTER TABLE statements per data-model.md (use JSONB for structured columns, include `tokens_reserved`, `max_conversation_duration_minutes`, and FTS index on hypothesis)
+- [X] T003 [DB] Update Drizzle schema `devops-app/server/db/schema.ts` — add `aiSettings`, `aiProviderKeys`, `aiConversations`, `aiMessages`, `aiToolCalls`, `aiDismissedFindings`, `aiComposeReviewCache` tables + modify `servers` (2 cols) and `scriptRuns` (3 cols) — ensure types match data-model.md (JSONB, enums)
+- [X] T004 [DB] Update migration journal `devops-app/server/db/migrations/meta/_journal.json` — add entry idx 13 for `0013_ai_incident_copilot`
+- [X] T005 [BE] Add `reversible: boolean` field to `ScriptManifestEntry` type and set explicit values on all 19 entries in `devops-app/server/scripts-manifest.ts` per data-model.md with Zod validation
+- [X] T005a [BE] Update `AppError` factories for new AI error classes: `budget_exhausted`, `kill_switch_engaged`, `aborted_by_timeout`, `master_key_unavailable`
 
 ## Phase 2: Foundational (AI core services)
 
-- [ ] T006 [BE] Create `devops-app/server/services/ai/providers.ts` — `resolveModel()` function mapping provider config to Vercel AI SDK model instances (anthropic/openai/ollama) with typed inputs/outputs
-- [ ] T007 [BE] Create `devops-app/server/lib/mask-context-document.ts` — regex-based secret masking + prompt-injection-safe source delimiters for free-text LLM context (sk-*, ghp_*, AKIA*, -----BEGIN*, password=*) with typed inputs/outputs; include sanitization of XML-like tags (`</?context-source`) from untrusted input
-- [ ] T008 [BE] Create `devops-app/server/lib/ai-tool-registry.ts` — `manifestToAiTools()` converting ScriptManifestEntry[] to Vercel AI SDK tool definitions with dangerLevel/reversible metadata in descriptions
-- [ ] T009 [BE] Create `devops-app/server/services/ai/system-prompt.ts` — system prompt resolution logic (DB-first with TS fallback) per §15.1, including untrusted-context instructions, confidence rubric, and tool metadata guidance
-- [ ] T010 [BE] Create `devops-app/server/services/ai/budget-enforcer.ts` — monthly token budget check + per-incident cap enforcement + conservative token reservation/reconciliation with typed inputs/outputs
-- [ ] T011 [BE] Create `devops-app/server/services/ai/context-aggregator.ts` — read-only query fanout across audit_entries (100), app_health_history (50), script_runs (5), deployments (5), app_cert_events (20) with maskContextDocument() applied before output and token-size truncation metadata
-- [ ] T012 [BE] Create `devops-app/server/services/ai/sandbox-fixtures.ts` — `Record<manifestId, CannedResponse>` with generic fallback `{ status: "ok", note: "dry-run", exitCode: 0 }`
-- [ ] T013 [BE] Create `devops-app/server/services/ai/incident-analyzer.ts` — core `streamText()` orchestration: create conversation row with `tokens_reserved`, aggregate context, retry transient provider errors, stream via WS channel `ai:<conversationId>`, persist messages, handle cap/kill-switch/timeout abort with typed inputs/outputs; include `max_conversation_duration` wall-clock safety net
-- [ ] T014 [BE] Extend `devops-app/server/lib/audit-actions.ts` — add 27 new `ai.*` audit action types with Zod payload schemas per data-model.md (added `aborted_by_timeout`)
-- [ ] T015 [BE] Extend `devops-app/server/lib/event-catalogue.ts` — add 6 new notification triggers per data-model.md
-- [ ] T016 [BE] Create `devops-app/server/lib/compose-static-lint.ts` — 7 static lint rules (latest tag, reserved ports, missing healthcheck, plaintext secrets, privileged, dangerous mounts, missing depends_on) with typed inputs/outputs
+- [X] T006 [BE] Create `devops-app/server/services/ai/providers.ts` — `resolveModel()` function mapping provider config to Vercel AI SDK model instances (anthropic/openai/ollama) with typed inputs/outputs
+- [X] T007 [BE] Create `devops-app/server/lib/mask-context-document.ts` — regex-based secret masking + prompt-injection-safe source delimiters for free-text LLM context (sk-*, ghp_*, AKIA*, -----BEGIN*, password=*) with typed inputs/outputs; include sanitization of XML-like tags (`</?context-source`) from untrusted input
+- [X] T008 [BE] Create `devops-app/server/lib/ai-tool-registry.ts` — `manifestToAiTools()` converting ScriptManifestEntry[] to Vercel AI SDK tool definitions with dangerLevel/reversible metadata in descriptions
+- [X] T009 [BE] Create `devops-app/server/services/ai/system-prompt.ts` — system prompt resolution logic (DB-first with TS fallback) per §15.1, including untrusted-context instructions, confidence rubric, and tool metadata guidance
+- [X] T010 [BE] Create `devops-app/server/services/ai/budget-enforcer.ts` — monthly token budget check + per-incident cap enforcement + conservative token reservation/reconciliation with typed inputs/outputs
+- [X] T011 [BE] Create `devops-app/server/services/ai/context-aggregator.ts` — read-only query fanout across audit_entries (100), app_health_history (50), script_runs (5), deployments (5), app_cert_events (20) with maskContextDocument() applied before output and token-size truncation metadata
+- [X] T012 [BE] Create `devops-app/server/services/ai/sandbox-fixtures.ts` — `Record<manifestId, CannedResponse>` with generic fallback `{ status: "ok", note: "dry-run", exitCode: 0 }`
+- [X] T013 [BE] Create `devops-app/server/services/ai/incident-analyzer.ts` — core `streamText()` orchestration: create conversation row with `tokens_reserved`, aggregate context, retry transient provider errors, stream via WS channel `ai:<conversationId>`, persist messages, handle cap/kill-switch/timeout abort with typed inputs/outputs; include `max_conversation_duration` wall-clock safety net
+- [X] T014 [BE] Extend `devops-app/server/lib/audit-actions.ts` — add 27 new `ai.*` audit action types with Zod payload schemas per data-model.md (added `aborted_by_timeout`)
+- [X] T015 [BE] Extend `devops-app/server/lib/event-catalogue.ts` — add 6 new notification triggers per data-model.md
+- [X] T016 [BE] Create `devops-app/server/lib/compose-static-lint.ts` — 7 static lint rules (latest tag, reserved ports, missing healthcheck, plaintext secrets, privileged, dangerous mounts, missing depends_on) with typed inputs/outputs
 - [ ] T017 [BE] Unit test `devops-app/tests/unit/compose-static-lint.test.ts` — all 7 rules × pass/fail cases
 - [ ] T018 [BE] Unit test `devops-app/tests/unit/mask-context-document.test.ts` — secret pattern detection + false-positive safety
 - [ ] T019 [BE] Unit test `devops-app/tests/unit/ai-tool-registry.test.ts` — manifest → tool conversion, dangerLevel/reversible in descriptions
@@ -34,13 +34,13 @@
 
 **Goal**: Operator can configure AI provider, API key, model, budget limits. Feature-flagged off by default.
 
-- [ ] T022 [BE] [US1] Create route `devops-app/server/routes/ai-settings.ts` — GET/PUT `/api/ai/settings` + PUT `/api/ai/settings/kill-switch` with Zod validation, `requireAuth`, and `ai:admin` mutation role checks
-- [ ] T023 [BE] [US1] Create route `devops-app/server/routes/ai-providers.ts` — CRUD `/api/ai/providers`, POST `/api/ai/providers/:id/test` (health probe ≤10 tokens) with Zod validation and `ai:admin` mutation role checks. API keys write-only (never returned), sealed via envelope-cipher; unavailable master key returns structured error and audit
-- [ ] T024 [FE] [US1] Create `devops-app/client/components/ai/AiSettingsSection.tsx` — settings page AI Copilot section: enable toggle, budget inputs, tool-use toggle, sandbox default, retention days
-- [ ] T025 [FE] [US1] Create `devops-app/client/components/ai/ProviderConfigForm.tsx` — add/edit provider modal: provider dropdown, model input, API key masked input (or endpoint URL for ollama), rate card inputs, "Test Connection" button with inline result
-- [ ] T026 [FE] [US1] Create `devops-app/client/hooks/useAiSettings.ts` — fetch + mutate AI settings
-- [ ] T027 [FE] [US1] Create `devops-app/client/hooks/useAiProviders.ts` — CRUD providers + test connection
-- [ ] T028 [FE] [US1] Create `devops-app/client/components/ai/KillSwitchBanner.tsx` — red dashboard-wide banner when kill switch engaged
+- [X] T022 [BE] [US1] Create route `devops-app/server/routes/ai-settings.ts` — GET/PUT `/api/ai/settings` + PUT `/api/ai/settings/kill-switch` with Zod validation, `requireAuth`, and `ai:admin` mutation role checks
+- [X] T023 [BE] [US1] Create route `devops-app/server/routes/ai-providers.ts` — CRUD `/api/ai/providers`, POST `/api/ai/providers/:id/test` (health probe ≤10 tokens) with Zod validation and `ai:admin` mutation role checks. API keys write-only (never returned), sealed via envelope-cipher; unavailable master key returns structured error and audit
+- [X] T024 [FE] [US1] Create `devops-app/client/components/ai/AiSettingsSection.tsx` — settings page AI Copilot section: enable toggle, budget inputs, tool-use toggle, sandbox default, retention days
+- [X] T025 [FE] [US1] Create `devops-app/client/components/ai/ProviderConfigForm.tsx` — add/edit provider modal: provider dropdown, model input, API key masked input (or endpoint URL for ollama), rate card inputs, "Test Connection" button with inline result
+- [X] T026 [FE] [US1] Create `devops-app/client/hooks/useAiSettings.ts` — fetch + mutate AI settings
+- [X] T027 [FE] [US1] Create `devops-app/client/hooks/useAiProviders.ts` — CRUD providers + test connection
+- [X] T028 [FE] [US1] Create `devops-app/client/components/ai/KillSwitchBanner.tsx` — red dashboard-wide banner when kill switch engaged
 - [ ] T029 [BE] [US1] Integration test `devops-app/tests/integration/ai-settings.test.ts` — CRUD settings + kill switch toggle + audit trail verification
 - [ ] T030 [BE] [US1] Integration test `devops-app/tests/integration/ai-providers.test.ts` — CRUD providers, key rotation audit, test connection (mocked provider)
 
@@ -48,39 +48,39 @@
 
 **Goal**: Operator clicks "Analyze with AI" on any failure surface, gets streaming hypothesis + evidence in IncidentView.
 
-- [ ] T031 [BE] [US2] Create route `devops-app/server/routes/ai-conversations.ts` — POST `/api/ai/conversations` (create + start inference, returns existing in-flight for same target), GET list with filters (trigger, targetKind, status, date, full-text), GET latest-by-target, GET `/:id` with messages + tool calls, PATCH `/:id` sandboxMode, POST `/:id/recover` with Zod validation and structured error handling
-- [ ] T032 [FE] [US2] Create `devops-app/client/pages/IncidentPage.tsx` — `/incidents/:id` route, full IncidentView layout
-- [ ] T033 [FE] [US2] Create `devops-app/client/components/ai/IncidentView.tsx` — main conversation UI: context summary, streaming hypothesis, evidence, activity timeline
-- [ ] T034 [FE] [US2] Create `devops-app/client/components/ai/ContextSummary.tsx` — display aggregated source counts (N log lines, M audit events, etc.)
-- [ ] T035 [FE] [US2] Create `devops-app/client/components/ai/HypothesisPanel.tsx` — streaming text display with confidence badge
-- [ ] T036 [FE] [US2] Create `devops-app/client/components/ai/AnalyzeButton.tsx` — "Analyze with AI" button, shown on AppPage (health RED), RunDetail (failed), ServerPage (any RED app), cert-expiring banner
-- [ ] T037 [FE] [US2] Create `devops-app/client/hooks/useAiConversation.ts` — WS subscription to `ai:<conversationId>` channel + REST fallback on reconnect
-- [ ] T038 [FE] [US2] Mount AnalyzeButton on `devops-app/client/components/apps/AppPage.tsx` (when health RED or last deploy failed)
-- [ ] T039 [FE] [US2] Mount AnalyzeButton on `devops-app/client/components/deploy/RunDetail.tsx` (when run failed)
-- [ ] T039a [FE] [US2] Mount AnalyzeButton on AuditPage high/failure rows, ServerPage when any app is RED, and cert-expiring banner
+- [X] T031 [BE] [US2] Create route `devops-app/server/routes/ai-conversations.ts` — POST `/api/ai/conversations` (create + start inference, returns existing in-flight for same target), GET list with filters (trigger, targetKind, status, date, full-text), GET latest-by-target, GET `/:id` with messages + tool calls, PATCH `/:id` sandboxMode, POST `/:id/recover` with Zod validation and structured error handling
+- [X] T032 [FE] [US2] Create `devops-app/client/pages/IncidentPage.tsx` — `/incidents/:id` route, full IncidentView layout
+- [X] T033 [FE] [US2] Create `devops-app/client/components/ai/IncidentView.tsx` — main conversation UI: context summary, streaming hypothesis, evidence, activity timeline
+- [X] T034 [FE] [US2] Create `devops-app/client/components/ai/ContextSummary.tsx` — display aggregated source counts (N log lines, M audit events, etc.)
+- [X] T035 [FE] [US2] Create `devops-app/client/components/ai/HypothesisPanel.tsx` — streaming text display with confidence badge
+- [X] T036 [FE] [US2] Create `devops-app/client/components/ai/AnalyzeButton.tsx` — "Analyze with AI" button, shown on AppPage (health RED), RunDetail (failed), ServerPage (any RED app), cert-expiring banner
+- [X] T037 [FE] [US2] Create `devops-app/client/hooks/useAiConversation.ts` — WS subscription to `ai:<conversationId>` channel + REST fallback on reconnect
+- [X] T038 [FE] [US2] Mount AnalyzeButton on `devops-app/client/components/apps/AppPage.tsx` (when health RED or last deploy failed)
+- [X] T039 [FE] [US2] Mount AnalyzeButton on `devops-app/client/components/deploy/RunDetail.tsx` (when run failed)
+- [X] T039a [FE] [US2] Mount AnalyzeButton on AuditPage high/failure rows, ServerPage when any app is RED, and cert-expiring banner
 - [ ] T040 [BE] [US2] Integration test `devops-app/tests/integration/ai-pull-analysis.test.ts` — create conversation, mock provider streaming, verify messages persisted, WS events emitted, audit trail
 
 ## Phase 5: US3 — Auto-analyze on High-severity Event (P1)
 
 **Goal**: Push triggers automatically start AI analysis on qualifying events. 5-min dedup window.
 
-- [ ] T041 [BE] [US3] Create `devops-app/server/services/ai/push-subscriber.ts` — `onEvent(eventType, context)` with settings/preferences/kill-switch/system-rate-limit checks, 5-min rolling dedup map per `(target_kind, target_id, event_class)`, absorb-in-flight vs spawn-new-post-terminal logic per FR-017; ensure concurrency-safe check-then-set via synchronous critical section (no `await` during dedup logic)
-- [ ] T042 [BE] [US3] Wire push subscriber calls into existing event-emitting code paths: health-poller RED transition, deploy failure handlers, cert sweep, script failure (dangerLevel ≥ medium) — add `aiPushSubscriber.onEvent()` calls at each site
-- [ ] T043 [FE] [US3] Create `devops-app/client/components/ai/AiBadge.tsx` — "AI analyzed — click to view" badge linking to `/incidents/:id`
-- [ ] T044 [FE] [US3] Mount AiBadge on AppPage, ServerPage, RunDetail when a push-triggered conversation exists for the target
+- [X] T041 [BE] [US3] Create `devops-app/server/services/ai/push-subscriber.ts` — `onEvent(eventType, context)` with settings/preferences/kill-switch/system-rate-limit checks, 5-min rolling dedup map per `(target_kind, target_id, event_class)`, absorb-in-flight vs spawn-new-post-terminal logic per FR-017; ensure concurrency-safe check-then-set via synchronous critical section (no `await` during dedup logic)
+- [X] T042 [BE] [US3] Wire push subscriber calls into existing event-emitting code paths: health-poller RED transition, deploy failure handlers, cert sweep, script failure (dangerLevel ≥ medium) — add `aiPushSubscriber.onEvent()` calls at each site
+- [X] T043 [FE] [US3] Create `devops-app/client/components/ai/AiBadge.tsx` — "AI analyzed — click to view" badge linking to `/incidents/:id`
+- [X] T044 [FE] [US3] Mount AiBadge on AppPage, ServerPage, RunDetail when a push-triggered conversation exists for the target
 - [ ] T045 [BE] [US3] Integration test `devops-app/tests/integration/ai-push-analysis.test.ts` — event → auto-conversation creation, dedup absorb, dedup spawn-new, kill-switch mid-push, budget skip
 
 ## Phase 6: US4 — Tool-Call Approval and Execution (P1)
 
 **Goal**: LLM proposes tool-calls, operator approves with danger-tier confirmation, execution via scriptsRunner.
 
-- [ ] T046 [BE] [US4] Create `devops-app/server/services/ai/tool-call-dispatcher.ts` — validate params via manifest Zod schema, check server policy, dispatch via scriptsRunner with `initiated_by='ai_proposal'` + AI linkage columns, feed result back to LLM conversation
-- [ ] T047 [BE] [US4] Create route `devops-app/server/routes/ai-tool-calls.ts` — POST `/api/ai/tool-calls/:id/challenge`, POST `/api/ai/tool-calls/:id/approve` (with optional param override), POST `/:id/reject` with Zod validation and structured error handling; server-side danger-tier enforcement (low=direct, medium=ackText, high=typedTarget+challenge cooldown)
-- [ ] T048 [BE] [US4] Modify `devops-app/server/services/scripts-runner.ts` — accept `initiatedBy`, `aiConversationId`, `aiToolCallId` params and persist to script_runs row
-- [ ] T049 [FE] [US4] Create `devops-app/client/components/ai/ToolCallCard.tsx` — proposal card: action name, editable params form (derived from Zod), target server dropdown, dangerLevel badge, reversible badge, Approve/Edit/Reject buttons
-- [ ] T050 [FE] [US4] Create `devops-app/client/components/ai/ToolCallApprovalDialog.tsx` — danger-tier confirmation modals: low=immediate, medium=type "approve", high=type app/server name + 5s cooldown
-- [ ] T051 [FE] [US4] Create `devops-app/client/components/ai/ActivityTimeline.tsx` — chronological event feed of tool-call state transitions in IncidentView
-- [ ] T052 [FE] [US4] Create `devops-app/client/hooks/useToolCallApproval.ts` — approve/reject mutations with optimistic updates
+- [X] T046 [BE] [US4] Create `devops-app/server/services/ai/tool-call-dispatcher.ts` — validate params via manifest Zod schema, check server policy, dispatch via scriptsRunner with `initiated_by='ai_proposal'` + AI linkage columns, feed result back to LLM conversation
+- [X] T047 [BE] [US4] Create route `devops-app/server/routes/ai-tool-calls.ts` — POST `/api/ai/tool-calls/:id/challenge`, POST `/api/ai/tool-calls/:id/approve` (with optional param override), POST `/:id/reject` with Zod validation and structured error handling; server-side danger-tier enforcement (low=direct, medium=ackText, high=typedTarget+challenge cooldown)
+- [X] T048 [BE] [US4] Modify `devops-app/server/services/scripts-runner.ts` — accept `initiatedBy`, `aiConversationId`, `aiToolCallId` params and persist to script_runs row
+- [X] T049 [FE] [US4] Create `devops-app/client/components/ai/ToolCallCard.tsx` — proposal card: action name, editable params form (derived from Zod), target server dropdown, dangerLevel badge, reversible badge, Approve/Edit/Reject buttons
+- [X] T050 [FE] [US4] Create `devops-app/client/components/ai/ToolCallApprovalDialog.tsx` — danger-tier confirmation modals: low=immediate, medium=type "approve", high=type app/server name + 5s cooldown
+- [X] T051 [FE] [US4] Create `devops-app/client/components/ai/ActivityTimeline.tsx` — chronological event feed of tool-call state transitions in IncidentView
+- [X] T052 [FE] [US4] Create `devops-app/client/hooks/useToolCallApproval.ts` — approve/reject mutations with optimistic updates
 - [ ] T053 [BE] [US4] Integration test `devops-app/tests/integration/ai-tool-call-approval.test.ts` — propose → approve → execute → audit trail complete (SC-003)
 - [ ] T054 [BE] [US4] Integration test `devops-app/tests/integration/ai-tool-call-policy.test.ts` — server policy blocks, deploy lock blocks, invalid params rejected, sandbox dry-run
 
@@ -88,56 +88,56 @@
 
 **Goal**: Conversations can run in sandbox mode where tool-calls return canned responses.
 
-- [ ] T055 [BE] [US5] Integrate sandbox mode in `tool-call-dispatcher.ts` — intercept execution, return fixture from `sandbox-fixtures.ts`, tag audit with `dry_run=true`
-- [ ] T056 [FE] [US5] Create `devops-app/client/components/ai/SandboxBadge.tsx` — "DRY-RUN" label on tool-call cards and IncidentView header
-- [ ] T057 [FE] [US5] Add sandbox toggle to IncidentView — per-conversation override, defaults per `ai_settings.default_sandbox`
+- [X] T055 [BE] [US5] Integrate sandbox mode in `tool-call-dispatcher.ts` — intercept execution, return fixture from `sandbox-fixtures.ts`, tag audit with `dry_run=true`
+- [X] T056 [FE] [US5] Create `devops-app/client/components/ai/SandboxBadge.tsx` — "DRY-RUN" label on tool-call cards and IncidentView header
+- [X] T057 [FE] [US5] Add sandbox toggle to IncidentView — per-conversation override, defaults per `ai_settings.default_sandbox`
 - [ ] T058 [BE] [US5] Integration test `devops-app/tests/integration/ai-sandbox.test.ts` — sandbox dispatch returns fixture, audit tagged, toggle mid-conversation
 
 ## Phase 8: US6 — Compose Reviewer (P2)
 
 **Goal**: Static lint on keystroke + LLM review on button click in EditAppPage.
 
-- [ ] T059 [BE] [US6] Create route `devops-app/server/routes/ai-compose-review.ts` — POST `/api/ai/compose-lint` (static only), POST `/api/ai/compose-review` (static + LLM with content-hash cache), POST/DELETE dismiss endpoints with Zod validation
-- [ ] T060 [BE] [US6] Create `devops-app/server/services/ai/compose-reviewer.ts` — LLM review orchestration + `ai_compose_review_cache` lookup/store, 24h TTL or content-change invalidation
-- [ ] T061 [FE] [US6] Create `devops-app/client/components/ai/ComposeStaticLintInline.tsx` — keystroke-debounced (300ms) static lint results inline
-- [ ] T062 [FE] [US6] Create `devops-app/client/components/ai/ComposeReviewPanel.tsx` — "Review with AI" button + findings list with severity/line/finding/suggestion + Dismiss links
-- [ ] T063 [FE] [US6] Create `devops-app/client/hooks/useComposeReview.ts` — static lint state + LLM review state + dismiss mutations
-- [ ] T064 [FE] [US6] Mount ComposeStaticLintInline + ComposeReviewPanel on `devops-app/client/components/apps/EditAppForm.tsx`
+- [X] T059 [BE] [US6] Create route `devops-app/server/routes/ai-compose-review.ts` — POST `/api/ai/compose-lint` (static only), POST `/api/ai/compose-review` (static + LLM with content-hash cache), POST/DELETE dismiss endpoints with Zod validation
+- [X] T060 [BE] [US6] Create `devops-app/server/services/ai/compose-reviewer.ts` — LLM review orchestration + `ai_compose_review_cache` lookup/store, 24h TTL or content-change invalidation
+- [X] T061 [FE] [US6] Create `devops-app/client/components/ai/ComposeStaticLintInline.tsx` — keystroke-debounced (300ms) static lint results inline
+- [X] T062 [FE] [US6] Create `devops-app/client/components/ai/ComposeReviewPanel.tsx` — "Review with AI" button + findings list with severity/line/finding/suggestion + Dismiss links
+- [X] T063 [FE] [US6] Create `devops-app/client/hooks/useComposeReview.ts` — static lint state + LLM review state + dismiss mutations
+- [X] T064 [FE] [US6] Mount ComposeStaticLintInline + ComposeReviewPanel on `devops-app/client/components/apps/EditAppForm.tsx`
 - [ ] T065 [BE] [US6] Integration test `devops-app/tests/integration/ai-compose-review.test.ts` — static lint rules, LLM review (mocked), cache hit, dismiss/un-dismiss
 
 ## Phase 9: US7 — Kill Switch / Per-server AI Disable (P2)
 
 **Goal**: Per-server AI access controls + global kill switch.
 
-- [ ] T066 [BE] [US7] Extend PATCH `/api/servers/:id` in `devops-app/server/routes/servers.ts` — accept `aiReadAccess`, `aiWriteAccess` fields with Zod validation, emit `ai.server_policy_changed` audit
-- [ ] T067 [FE] [US7] Add AI Copilot Access section to ServerPage settings tab — read access toggle, write access dropdown (enabled/sandbox-only/disabled)
+- [X] T066 [BE] [US7] Extend PATCH `/api/servers/:id` in `devops-app/server/routes/servers.ts` — accept `aiReadAccess`, `aiWriteAccess` fields with Zod validation, emit `ai.server_policy_changed` audit
+- [X] T067 [FE] [US7] Add AI Copilot Access section to ServerPage settings tab — read access toggle, write access dropdown (enabled/sandbox-only/disabled)
 - [ ] T068 [BE] [US7] Integration test `devops-app/tests/integration/ai-kill-switch.test.ts` — engage → block new inference and new tool-call execution, in-flight finishes chunk + halts, release → resume, per-server policy enforcement
 
 ## Phase 10: US8 — Cost Dashboard and Budget Enforcement (P3)
 
 **Goal**: Visible spend tracking + hard-stop when budget exhausted.
 
-- [ ] T069 [BE] [US8] Create route `devops-app/server/routes/ai-spend.ts` — GET `/api/ai/spend` (monthly/today aggregates), GET `/api/ai/spend/conversations` (per-conversation breakdown with pagination)
-- [ ] T070 [FE] [US8] Create `devops-app/client/components/ai/CostDashboard.tsx` — spend overview (this month tokens in/out, USD estimate, budget progress bar) + per-conversation table
-- [ ] T071 [FE] [US8] Create `devops-app/client/hooks/useAiSpend.ts` — fetch spend data with period selector
+- [X] T069 [BE] [US8] Create route `devops-app/server/routes/ai-spend.ts` — GET `/api/ai/spend` (monthly/today aggregates), GET `/api/ai/spend/conversations` (per-conversation breakdown with pagination)
+- [X] T070 [FE] [US8] Create `devops-app/client/components/ai/CostDashboard.tsx` — spend overview (this month tokens in/out, USD estimate, budget progress bar) + per-conversation table
+- [X] T071 [FE] [US8] Create `devops-app/client/hooks/useAiSpend.ts` — fetch spend data with period selector
 - [ ] T072 [BE] [US8] Integration test `devops-app/tests/integration/ai-budget-enforcement.test.ts` — monthly budget exhaustion (pull=402, push=skip+audit), per-incident cap mid-conversation halt
 
 ## Phase 11: US9 — Conversation History and Search (P3)
 
 **Goal**: List page with filters + history replay + soft-delete retention.
 
-- [ ] T073 [FE] [US9] Create `devops-app/client/pages/IncidentsListPage.tsx` — `/incidents` route with filters (trigger, targetKind, status, date range, full-text search), paginated table
-- [ ] T074 [BE] [US9] Create `devops-app/server/services/ai/archiver.ts` — daily cron soft-deletes conversations older than `conversation_retention_days`, sets `archived_at`
+- [X] T073 [FE] [US9] Create `devops-app/client/pages/IncidentsListPage.tsx` — `/incidents` route with filters (trigger, targetKind, status, date range, full-text search), paginated table
+- [X] T074 [BE] [US9] Create `devops-app/server/services/ai/archiver.ts` — daily cron soft-deletes conversations older than `conversation_retention_days`, sets `archived_at`
 - [ ] T075 [BE] [US9] Integration test `devops-app/tests/integration/ai-conversation-history.test.ts` — list with filters, archive cron, recover endpoint
 
 ## Phase 12: Polish & Cross-cutting
 
-- [ ] T076 [BE] Wire all new route files into Express app (`devops-app/server/index.ts`) — ai-settings, ai-providers, ai-conversations, ai-tool-calls, ai-compose-review, ai-spend; gate all behind `ai_settings.enabled` check middleware
-- [ ] T077 [FE] Add `/incidents` and `/incidents/:id` routes to client router
-- [ ] T078 [FE] Mount KillSwitchBanner in root layout (shows when `ai_settings.global_kill_switch_engaged = true`)
-- [ ] T079 [BE] Rate-limit middleware on inference-creating endpoints: 10/min per user per FR-052
-- [ ] T080 [SEC] Security review: verify API keys never returned in any GET response, AI endpoint role checks are enforced, `maskContextDocument()` covers all aggregation paths with untrusted-source delimiters, no secret patterns in `ai_messages` content_text, and direct API calls cannot bypass danger-tier confirmations
-- [ ] T081 [E2E] End-to-end test: full pull-trigger flow — configure provider → analyze app → approve tool-call → verify audit trail completeness (SC-003, SC-004)
+- [X] T076 [BE] Wire all new route files into Express app (`devops-app/server/index.ts`) — ai-settings, ai-providers, ai-conversations, ai-tool-calls, ai-compose-review, ai-spend; gate all behind `ai_settings.enabled` check middleware
+- [X] T077 [FE] Add `/incidents` and `/incidents/:id` routes to client router
+- [X] T078 [FE] Mount KillSwitchBanner in root layout (shows when `ai_settings.global_kill_switch_engaged = true`)
+- [X] T079 [BE] Rate-limit middleware on inference-creating endpoints: 10/min per user per FR-052
+- [X] T080 [SEC] Security review: verify API keys never returned in any GET response, AI endpoint role checks are enforced, `maskContextDocument()` covers all aggregation paths with untrusted-source delimiters, no secret patterns in `ai_messages` content_text, and direct API calls cannot bypass danger-tier confirmations
+- [X] T081 [E2E] End-to-end test: full pull-trigger flow — configure provider → analyze app → approve tool-call → verify audit trail completeness (SC-003, SC-004)
 
 ## Dependency Graph
 

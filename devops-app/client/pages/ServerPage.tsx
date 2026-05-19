@@ -20,6 +20,9 @@ import { BootstrapWizard } from "../components/bootstrap/BootstrapWizard.js";
 import { BootstrapHistoryPanel } from "../components/bootstrap/BootstrapHistoryPanel.js";
 import { BootstrapStateBadge } from "../components/bootstrap/BootstrapStateBadge.js";
 import { MigrateExistingAppWizard } from "../components/apps/MigrateExistingAppWizard.js";
+import { AnalyzeButton } from "../components/ai/AnalyzeButton.js";
+import { AiBadge } from "../components/ai/AiBadge.js";
+import { AiServerPolicySection } from "../components/ai/AiServerPolicySection.js";
 import type {
   GitCandidate,
   DockerCandidate,
@@ -289,6 +292,8 @@ export function ServerPage() {
             className={`w-2.5 h-2.5 rounded-full ${statusColors[server.status] ?? statusColors.unknown}`}
           />
           <h1 className="text-2xl font-bold">{server.label}</h1>
+          <AiBadge targetKind="server" targetId={server.id} />
+          <AnalyzeButton targetKind="server" targetId={server.id} variant="secondary" />
         </div>
         <p className="text-sm text-gray-400 mt-1">
           {server.host}:{server.port} &middot; {server.sshUser}
@@ -340,9 +345,22 @@ export function ServerPage() {
             {tab}
           </button>
         ))}
+        <button
+          role="tab"
+          aria-selected={activeTab === "AI" as any}
+          onClick={() => setActiveTab("AI" as any)}
+          className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px ${
+            activeTab === "AI" as any
+              ? "text-brand-purple border-brand-purple"
+              : "text-gray-500 border-transparent hover:text-gray-300"
+          }`}
+        >
+          AI Policy
+        </button>
       </div>
 
       {/* Tab Content */}
+      {activeTab === ("AI" as any) && <AiServerPolicySection serverId={serverId!} />}
       {activeTab === "Apps" && (
         <AppsTab
           apps={apps}

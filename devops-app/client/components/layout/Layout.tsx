@@ -3,6 +3,7 @@ import { Outlet, useNavigate, Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../../lib/api.js";
 import { useWebSocket } from "../../hooks/useWebSocket.js";
+import { KillSwitchBanner } from "../ai/KillSwitchBanner.js";
 
 interface User {
   username: string;
@@ -65,6 +66,12 @@ export function Layout() {
             Runs
           </Link>
           <Link
+            to="/incidents"
+            className="block px-3 py-2 rounded-lg text-gray-300 hover:bg-gray-800 hover:text-white"
+          >
+            Incidents
+          </Link>
+          <Link
             to="/audit"
             className="block px-3 py-2 rounded-lg text-gray-300 hover:bg-gray-800 hover:text-white"
           >
@@ -93,7 +100,8 @@ export function Layout() {
       </aside>
 
       {/* Main content */}
-      <main className="flex-1 overflow-auto">
+      <main className="flex-1 overflow-auto flex flex-col">
+        <KillSwitchBanner />
         <Outlet />
       </main>
     </div>

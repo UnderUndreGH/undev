@@ -8,6 +8,7 @@ import {
 import { TlsAcmeSection } from "../components/settings/TlsAcmeSection.js";
 import { NotificationsSection } from "../components/settings/NotificationsSection.js";
 import { SshKeysSection } from "../components/settings/SshKeysSection.js";
+import { AiSettingsSection } from "../components/settings/AiSettingsSection.js";
 
 export function SettingsPage() {
   const { data: connection, isLoading } = useGitHubConnection();
@@ -43,6 +44,8 @@ export function SettingsPage() {
       <TlsAcmeSection />
 
       <NotificationsSection />
+
+      <AiSettingsSection />
 
       <SshKeysSection />
 

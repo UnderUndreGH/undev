@@ -39,6 +39,7 @@ import {
 import { extractFieldDescriptors, type FieldDescriptor } from "../lib/zod-descriptor.js";
 import { serialiseParams } from "../lib/serialise-params.js";
 import { maskSecrets } from "../lib/mask-secrets.js";
+import { onPushEvent } from "./ai/push-subscriber.js";
 import { decryptForDispatch } from "./env-vars-store.js";
 import { buildTransportBuffer } from "../lib/common-sh-concat.js";
 import { buildHealthCheckTail } from "./build-health-check-tail.js";
@@ -100,6 +101,10 @@ export interface ManifestDescriptor {
 
 export interface RunScriptOptions {
   linkDeploymentId?: string;
+  // Feature 013: AI linkage
+  initiatedBy?: "operator" | "ai_proposal";
+  aiConversationId?: string;
+  aiToolCallId?: string;
   // Feature 007: pre-allocated runId from `dispatchProjectLocalDeploy` wrapper.
   // When set, the runner UPDATEs the existing pending row instead of inserting
   // a new one — guarantees the SC-007 forensics trail row is the same row the
@@ -315,7 +320,7 @@ class ScriptsRunner {
             logFilePath,
           })
           .where(eq(scriptRuns.id, runId));
-      } else {
+          } else {
         await db.insert(scriptRuns).values({
           id: runId,
           scriptId,
@@ -326,8 +331,13 @@ class ScriptsRunner {
           status: "pending",
           startedAt,
           logFilePath,
+          // Feature 013
+          initiatedBy: options.initiatedBy ?? "operator",
+          aiConversationId: options.aiConversationId ?? null,
+          aiToolCallId: options.aiToolCallId ?? null,
         });
       }
+
     } catch (err) {
       // Insert failure is fatal for the run — release the lock + fail the job.
       if (lockAcquired) await deployLock.releaseLock(serverId).catch((releaseErr) => logger.error({ ctx: "scripts-runner", serverId, err: releaseErr }, "Failed to release deploy lock"));
@@ -562,6 +572,15 @@ class ScriptsRunner {
           }
           const duration = Date.now() - started;
           const exitCode = finalStatus === "success" ? 0 : null;
+
+          if (finalStatus === "failed" || finalStatus === "timeout") {
+             // Feature 013: trigger AI analysis on script failure
+             void onPushEvent({
+               targetKind: "script_run",
+               targetId: runId,
+               eventClass: "script_failed",
+             }).catch(err => logger.error({ ctx: "push-trigger", err }, "AI push trigger failed"));
+          }
 
           await this.persistTerminalStatus(
             runId,

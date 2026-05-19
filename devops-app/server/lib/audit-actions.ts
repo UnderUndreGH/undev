@@ -202,3 +202,80 @@ export const FEATURE_012_AUDIT_ACTIONS = [
 ] as const;
 
 export type Feature012AuditAction = (typeof FEATURE_012_AUDIT_ACTIONS)[number];
+
+// ── Feature 013: AI Incident Copilot ─────────────────────────────────────
+
+export const AiAnalysisPayload = z.object({
+  conversationId: z.string(),
+  trigger: z.enum(["pull", "push"]),
+  targetKind: z.string(),
+  targetId: z.string().nullable(),
+});
+
+export const AiAnalysisFailedPayload = AiAnalysisPayload.extend({
+  errorClass: z.string(),
+  message: z.string(),
+});
+
+export const AiBudgetExhaustedPayload = z.object({
+  conversationId: z.string().optional(),
+  type: z.enum(["monthly", "per_incident"]),
+  tokensIn: z.number(),
+  tokensOut: z.number(),
+  cap: z.number(),
+});
+
+export const AiToolCallProposedPayload = z.object({
+  conversationId: z.string(),
+  toolCallId: z.string(),
+  manifestId: z.string(),
+  dangerLevel: z.string(),
+});
+
+export const AiToolCallDecidedPayload = AiToolCallProposedPayload.extend({
+  decision: z.enum(["approved", "rejected"]),
+  operatorId: z.string(),
+});
+
+export const AiToolCallExecutedPayload = AiToolCallProposedPayload.extend({
+  scriptRunId: z.string(),
+  isDestructive: z.boolean(),
+});
+
+export const AiKillSwitchPayload = z.object({
+  engaged: z.boolean(),
+  operatorId: z.string(),
+  reason: z.string().optional(),
+});
+
+export const FEATURE_013_AUDIT_ACTIONS = [
+  "ai.provider_configured",
+  "ai.provider_configure_failed",
+  "ai.provider_key_rotated",
+  "ai.connection_tested",
+  "ai.analysis_started",
+  "ai.analysis_completed",
+  "ai.analysis_failed",
+  "ai.push_analysis_started",
+  "ai.push_analysis_skipped",
+  "ai.push_event_absorbed_by_in_flight",
+  "ai.push_event_new_conversation_post_dedup",
+  "ai.budget_exhausted_skipped_push",
+  "ai.tool_call_proposed",
+  "ai.tool_call_approved",
+  "ai.tool_call_rejected",
+  "ai.tool_call_executed",
+  "ai.tool_call_failed",
+  "ai.tool_call_blocked_by_policy",
+  "ai.tool_call_blocked_by_lock",
+  "ai.tool_call_executed_destructive",
+  "ai.context_masking_warning",
+  "ai.cost_drift_alert",
+  "ai.kill_switch_engaged",
+  "ai.kill_switch_released",
+  "ai.server_policy_changed",
+  "ai.conversation_recovered",
+  "ai.conversation_aborted_timeout",
+] as const;
+
+export type Feature013AuditAction = (typeof FEATURE_013_AUDIT_ACTIONS)[number];

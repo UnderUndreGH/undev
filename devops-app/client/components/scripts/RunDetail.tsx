@@ -3,6 +3,8 @@ import { useParams, Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../../lib/api.js";
 import { renderScriptIdentity } from "../../lib/render-script-identity.js";
+import { AnalyzeButton } from "../ai/AnalyzeButton.js";
+import { AiBadge } from "../ai/AiBadge.js";
 
 interface RunDetail {
   id: string;
@@ -63,6 +65,8 @@ export function RunDetail(): React.JSX.Element {
               Runs
             </Link>{" "}
             / {renderScriptIdentity(r)}
+            <AiBadge targetKind="script_run" targetId={r.id} />
+            <AnalyzeButton targetKind="script_run" targetId={r.id} variant="secondary" className="inline-flex ml-4" />
             {r.archived && (
               <span
                 className="ml-2 px-2 py-0.5 text-xs bg-neutral-800 text-neutral-400 rounded"

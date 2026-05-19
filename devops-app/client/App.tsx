@@ -10,6 +10,8 @@ import { AuditPage } from "./pages/AuditPage.js";
 import { AuditQueryPage } from "./pages/AuditQueryPage.js";
 import { SettingsPage } from "./pages/SettingsPage.js";
 import { RunsPage } from "./pages/RunsPage.js";
+import { IncidentPage } from "./pages/IncidentPage.js";
+import { IncidentsListPage } from "./pages/IncidentsListPage.js";
 import { RunDetail } from "./components/scripts/RunDetail.js";
 import { Layout } from "./components/layout/Layout.js";
 
@@ -37,6 +39,8 @@ export function App() {
             <Route path="/audit/query" element={<AuditQueryPage />} />
             <Route path="/runs" element={<RunsPage />} />
             <Route path="/runs/:runId" element={<RunDetail />} />
+            <Route path="/incidents" element={<IncidentsListPage />} />
+            <Route path="/incidents/:id" element={<IncidentPage />} />
             <Route path="/settings" element={<SettingsPage />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />

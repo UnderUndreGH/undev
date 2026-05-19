@@ -43,6 +43,13 @@ import { crossServerDomainRouter } from "./routes/cross-server-domain-check.js";
 import { auditQueryRouter } from "./routes/audit-query.js";
 import { migrationRouter } from "./routes/migration.js";
 import { blueGreenRouter } from "./routes/blue-green.js";
+import { aiSettingsRouter } from "./routes/ai-settings.js";
+import { aiProvidersRouter } from "./routes/ai-providers.js";
+import { aiConversationsRouter } from "./routes/ai-conversations.js";
+import { aiToolCallsRouter } from "./routes/ai-tool-calls.js";
+import { aiComposeReviewRouter } from "./routes/ai-compose-review.js";
+import { aiSpendRouter } from "./routes/ai-spend.js";
+import { startArchiverCron } from "./services/ai/archiver.js";
 import { initInterruptedDeploysCache } from "./services/interrupted-deploys-scanner.js";
 
 // ── Crash-shield (incident 2026-05-03) ──────────────────────────────────────
@@ -121,6 +128,14 @@ app.use("/api", auditQueryRouter);
 app.use("/api", migrationRouter);
 // Feature 012: Blue/Green Deploy manual recovery + interrupted-deploys panel.
 app.use("/api", blueGreenRouter);
+
+// ── Feature 013: AI Incident Copilot ─────────────────────────────────────
+app.use("/api/ai/settings", aiSettingsRouter);
+app.use("/api/ai/providers", aiProvidersRouter);
+app.use("/api/ai/conversations", aiConversationsRouter);
+app.use("/api/ai/tool-calls", aiToolCallsRouter);
+app.use("/api/ai/compose-review", aiComposeReviewRouter);
+app.use("/api/ai/spend", aiSpendRouter);
 
 // Serve static client build in production
 const clientDir = path.resolve(__dirname, "../client");
@@ -209,6 +224,9 @@ async function startup() {
 
   // Feature 009 T033: bootstrap auto-retry reconciler (5min cron, FR-022).
   startBootstrapReconciler();
+
+  // Feature 013: AI conversation archiver cron.
+  startArchiverCron();
 
   // Step 1d: Graceful shutdown — ALWAYS register, whether or not the lock
   // feature is active. The pool must drain on SIGTERM regardless so we don't

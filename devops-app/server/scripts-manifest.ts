@@ -60,6 +60,10 @@ export interface ScriptManifestEntry<
   waitForHealthy?: boolean;
   // Per-entry override of the wait-for-healthy timeout. Default 180_000ms (3min).
   healthyTimeoutMs?: number;
+  // Feature 013: AI Incident Copilot (FR-021).
+  // When true, the operation is considered "safe" to suggest/execute in
+  // read-only or low-danger contexts. default false (conservative).
+  reversible?: boolean;
 }
 
 export const CATEGORY_FOLDER_MAP: Record<ScriptCategory, string> = {
@@ -89,6 +93,7 @@ export const manifest: ScriptManifestEntry[] = [
     timeout: 1_800_000,
     waitForHealthy: true,
     healthyTimeoutMs: 180_000,
+    reversible: false,
     params: z.object({
       appDir: z.string(),
       branch: z.string().regex(BRANCH_REGEX).optional(),
@@ -118,6 +123,7 @@ export const manifest: ScriptManifestEntry[] = [
     requiresLock: true,
     timeout: 1_800_000,
     dangerLevel: "low",
+    reversible: false,
     params: z.object({
       appDir: z.string(),
       scriptPath: z.string().refine((s) => {
@@ -136,6 +142,7 @@ export const manifest: ScriptManifestEntry[] = [
     description: "Rollback to a previous commit (git reset + compose restart)",
     locus: "target",
     requiresLock: true,
+    reversible: false,
     params: z.object({
       appDir: z.string(),
       commit: z.string().regex(SHA_REGEX),
@@ -147,6 +154,7 @@ export const manifest: ScriptManifestEntry[] = [
     description: "Deploy a docker-compose app",
     locus: "target",
     requiresLock: true,
+    reversible: false,
     params: z.object({
       remotePath: z.string(),
       branch: z.string().optional(),
@@ -158,6 +166,7 @@ export const manifest: ScriptManifestEntry[] = [
     category: "deploy",
     description: "Set up server environment variables",
     locus: "target",
+    reversible: false,
     params: z.object({ appPath: z.string() }),
   },
   {
@@ -165,6 +174,7 @@ export const manifest: ScriptManifestEntry[] = [
     category: "deploy",
     description: "Tail deploy log",
     locus: "target",
+    reversible: true,
     params: z.object({
       appPath: z.string(),
       lines: z.number().default(100),
@@ -177,6 +187,7 @@ export const manifest: ScriptManifestEntry[] = [
     description: "Backup a Postgres database",
     locus: "target",
     outputArtifact: { type: "file-path", captureFrom: "stdout-last-line" },
+    reversible: true,
     params: z.object({
       databaseName: z.string(),
       retentionDays: z.number().default(30),
@@ -189,6 +200,7 @@ export const manifest: ScriptManifestEntry[] = [
     locus: "target",
     requiresLock: true,
     dangerLevel: "high",
+    reversible: false,
     params: z.object({
       databaseName: z.string(),
       backupPath: z.string(),
@@ -200,6 +212,7 @@ export const manifest: ScriptManifestEntry[] = [
     category: "docker",
     description: "Prune unused Docker resources",
     locus: "target",
+    reversible: false,
     params: z.object({ includeImages: z.boolean().default(true) }),
   },
   // monitoring/*
@@ -208,6 +221,7 @@ export const manifest: ScriptManifestEntry[] = [
     category: "monitoring",
     description: "Run security audit",
     locus: "target",
+    reversible: true,
     params: z.object({}),
   },
   // server-ops/*
@@ -223,6 +237,7 @@ export const manifest: ScriptManifestEntry[] = [
     requiresLock: true,
     timeout: 1_200_000,
     dangerLevel: "medium",
+    reversible: false,
     params: z.object({
       deployUser: z.string().regex(/^[a-z][a-z0-9_-]{0,31}$/),
       swapSize: z.string().regex(/^\d+G$/),
@@ -236,6 +251,7 @@ export const manifest: ScriptManifestEntry[] = [
     category: "server-ops",
     description: "Check system health",
     locus: "target",
+    reversible: true,
     params: z.object({}),
   },
   {
@@ -247,6 +263,7 @@ export const manifest: ScriptManifestEntry[] = [
     requiresLock: false,
     timeout: 600_000,
     dangerLevel: "low",
+    reversible: false,
     params: z.object({}).strict(),
   },
   // bootstrap/* — feature 009. State machine drives these in order.
@@ -260,6 +277,7 @@ export const manifest: ScriptManifestEntry[] = [
     requiresLock: true,
     timeout: 600_000,
     dangerLevel: "low",
+    reversible: false,
     params: z.object({
       appId: z.string().min(1),
       remotePath: z.string(),
@@ -278,6 +296,7 @@ export const manifest: ScriptManifestEntry[] = [
     requiresLock: true,
     timeout: 1_800_000,
     dangerLevel: "low",
+    reversible: false,
     params: z.object({
       appId: z.string().min(1),
       remotePath: z.string(),
@@ -293,6 +312,7 @@ export const manifest: ScriptManifestEntry[] = [
     requiresLock: false,
     timeout: 300_000,
     dangerLevel: "low",
+    reversible: true,
     params: z.object({
       appId: z.string().min(1),
       remotePath: z.string(),
@@ -311,6 +331,7 @@ export const manifest: ScriptManifestEntry[] = [
     timeout: 60_000,
     dangerLevel: "low",
     outputArtifact: { type: "json", captureFrom: "stdout-json" },
+    reversible: true,
     params: z.object({
       appId: z.string().min(1),
       remotePath: z.string(),
@@ -327,6 +348,7 @@ export const manifest: ScriptManifestEntry[] = [
     requiresLock: true,
     timeout: 600_000,
     dangerLevel: "high",
+    reversible: false,
     params: z.object({
       appId: z.string().min(1),
       remotePath: z.string(),
