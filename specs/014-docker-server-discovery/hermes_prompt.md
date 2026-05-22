@@ -1,0 +1,197 @@
+Fix remaining HIGH/MEDIUM/LOW issues from code review of Feature 013 AI Incident Copilot. The previous two passes already addressed CRITICAL (C1-C22) and RESIDUAL (R1-R3). Branch is `013-ai-incident-copilot`. Working directory is the project root; feature code lives under `devops-app/`. Do NOT commit, push, or PR.
+
+Spawn subagents for parallel work where files are independent. Group fixes by file when possible to minimize churn. If a fix is non-trivial or risky to combine with adjacent ones, prefer a separate edit.
+
+After ALL fixes, run:
+
+- `cd devops-app && npm run typecheck` — MUST pass with NO new errors (5 pre-existing in schema.ts/main.tsx are baseline).
+
+If a fix breaks compilation in a way you cannot resolve, REVERT that file and report which task was abandoned.
+
+===========================================
+HIGH severity (13 tasks)
+===========================================
+
+TASK H1 — system-prompt.ts: per-conversation override layer
+
+- File: `devops-app/server/services/ai/system-prompt.ts`
+- Problem: §15.1 precedence is `per-conversation override → admin DB → TS fallback`. Currently only `admin DB → TS`. No way to vary prompt per conversation type.
+- Fix: Change `resolveSystemPrompt()` signature to `resolveSystemPrompt(conversationId?: string): Promise<string>`. If `conversationId` provided, lookup `aiConversations.systemPromptOverride` column (add column to schema if missing — TEXT NULL — and migration file `0014_ai_system_prompt_override.sql`). If override present + non-empty, return it. Otherwise fall through to admin DB → TS fallback.
+- Update caller in `incident-analyzer.ts` to pass conversationId.
+
+TASK H2 — ai-conversations.ts: return existing in-flight conversation on duplicate POST
+
+- File: `devops-app/server/routes/ai-conversations.ts`
+- Problem: spec US2 — repeated "Analyze with AI" click for same target during in-flight conversation should return existing, not duplicate.
+- Fix: In POST handler before insert, query `aiConversations` WHERE `targetKind = parsed.data.targetKind AND targetId = parsed.data.targetId AND status IN ('pending', 'streaming')` LIMIT 1. If found, return that row's id with HTTP 200 and a header `X-Existing-Conversation: true`. Otherwise proceed to insert as today.
+
+TASK H3 — GIN index for FTS on hypothesis
+
+- File: New migration `devops-app/server/db/migrations/0014_ai_hypothesis_fts_index.sql` (or whatever the next migration number is — check `migrations/meta/_journal.json` and use the next one). Update `_journal.json` accordingly.
+- Problem: `ai-conversations.ts` does `to_tsvector('english', hypothesis) @@ plainto_tsquery(...)` — SEQ SCAN without GIN index.
+- Fix: `CREATE INDEX IF NOT EXISTS idx_ai_conversations_hypothesis_fts ON ai_conversations USING GIN (to_tsvector('english', hypothesis));`. Add journal entry.
+
+TASK H4 — Emit `ai.tool_call_proposed` audit when LLM proposes a tool call
+
+- File: `devops-app/server/services/ai/incident-analyzer.ts`
+- Problem: tool-calls insert with `status='proposed'` at line ~157-164 but no audit emission. Per FR-027 every state transition must emit audit.
+- Fix: After each `db.insert(aiToolCalls)` in the tool-call loop, emit an `auditEntries` row with action `ai.tool_call_proposed`, targetType `ai_tool_call`, targetId `toolCallId`, details `{ manifestId, conversationId, params }`. Use the existing `auditEntries` schema (look at the pattern in `tool-call-dispatcher.ts:emitToolCallAudit`).
+
+TASK H5 — Multi-turn conversation support
+
+- File: `devops-app/server/services/ai/incident-analyzer.ts`
+- Problem: assistant message hardcoded to `seq: 1`. Spec FR-026 says tool result is fed back as next conversation turn, LLM can propose further actions.
+- Fix:
+  1. Drop hardcoded `seq: 0` and `seq: 1`. Compute next seq via `max(seq) + 1` from `aiMessages` for the conversation, OR maintain a counter local to the function.
+  2. After a tool call is approved + executed (this happens out-of-band via dispatcher), provide a mechanism to RESUME the conversation with the result. Add a new export `resumeConversationWithToolResult(conversationId, toolCallId, resultPayload)`:
+     - Insert `aiMessages` role='tool' with serialized resultPayload at next seq.
+     - Re-invoke `streamText` (or `streamObject`) with full message history including the tool result.
+     - Persist additional assistant turn at next seq.
+     - Update token totals via reconcileTokens.
+  3. Wire `resumeConversationWithToolResult` into `tool-call-dispatcher.ts` AFTER successful real execution: when `scriptsRunner.runScript` returns and the script's terminal status is captured, fire-and-forget call to `resumeConversationWithToolResult`. (Hint: existing scripts-runner has a terminal-status hook — extend it to call the AI resume if `script_runs.aiConversationId` is non-null.)
+- If this is too complex to land cleanly, implement only steps 1-2 (the mechanism) without step 3 wiring, and report step 3 as deferred.
+
+TASK H7 — Drop `as any` cast in ai-providers test endpoint
+
+- File: `devops-app/server/routes/ai-providers.ts` (line ~103)
+- Problem: `await generateText({ model, prompt: '...' } as any);` bypasses Vercel AI SDK types.
+- Fix: Use proper typed call signature. `generateText({ model, prompt: 'Reply with "ok".' })` should typecheck cleanly if model type is correct from `resolveModel`. If TS complains, fix the underlying type of `resolveModel` to return a union of acceptable model types.
+
+TASK H8 — Sandbox path feeds result back to LLM as tool message
+
+- File: `devops-app/server/services/ai/tool-call-dispatcher.ts`
+- Problem: sandbox/dry-run path (lines ~110-128) returns fixture but doesn't insert it into `aiMessages` as a tool result. Per FR-026 result must be fed back regardless of dry_run.
+- Fix: In the sandbox branch, after marking tool call completed, insert an `aiMessages` row: role='tool', conversationId = `convo.id`, seq = max+1 (compute via SQL or pull max first), contentText = `JSON.stringify(fixture)`, contentMeta = `{ "dry_run": true, "manifestId": tc.manifestId, "toolCallId": tc.id }`. Reuse the seq computation pattern from H5.
+
+TASK H9 — Filter `archived_at IS NULL` in budget monthly aggregation
+
+- File: `devops-app/server/services/ai/budget-enforcer.ts`
+- Problem: `checkMonthlyBudget` SUMs all rows in current month without filtering soft-deleted conversations. If archiver runs mid-cycle, budget calc becomes inconsistent.
+- Fix: Add `WHERE archived_at IS NULL` to the existing `gte(createdAt, monthStart)` predicate. Drizzle equivalent: `and(gte(aiConversations.createdAt, monthStart), isNull(aiConversations.archivedAt))`. Import `isNull` from drizzle-orm.
+
+TASK H10 — Parallelize context-aggregator queries with Promise.all
+
+- File: `devops-app/server/services/ai/context-aggregator.ts`
+- Problem: 5 query sections await sequentially. With P99 50ms per query, total 250ms+ for context gathering. SC-001 budget is 30s.
+- Fix: Refactor each section into a separate async helper function: `fetchAuditEntries(targetKind, targetId)`, `fetchHealthProbes(...)`, `fetchScriptRuns(...)`, `fetchDeployments(...)`, `fetchCertEvents(...)`. Each returns `Promise<{ section: string, redactions: Record<...> }>` matching current `maskContextDocument` shape. Then `const [sec1, sec2, sec3, sec4, sec5] = await Promise.all([...])` and merge.
+- Preserve per-section error handling: individual try/catch inside each helper so one failing section doesn't tank the whole aggregation.
+
+TASK H11 — Field-level scrubbing for DB rows before LLM context
+
+- File: `devops-app/server/services/ai/context-aggregator.ts`
+- Problem: `JSON.stringify(r)` on full row dumps `errorMessage`, `paramsJson`, `details` (audit), etc. mask-context regex catches some but JSON `"password": "value"` structure may slip through.
+- Fix: Create per-table field whitelists for what goes into LLM context. Example for `audit_entries`: include `timestamp`, `action`, `target_type`, `target_id`, `result`, `details` (but mask `details`). For `script_runs`: exclude `params` field entirely (already masked at insert via `maskSecrets`, but defence in depth) — use `id, scriptId, serverId, status, startedAt, finishedAt, errorMessage` only. Same pattern for deployments / cert_events. Construct a sanitized object per row before JSON.stringify.
+
+TASK H12 — Human-readable description for reversible tool flag
+
+- File: `devops-app/server/lib/ai-tool-registry.ts`
+- Problem: `description: \`${entry.description}. Danger: ${entry.dangerLevel ?? "low"}. Reversible: ${entry.reversible ?? false}.\`` — booleans serialized verbatim.
+- Fix: Translate the booleans to natural-language hints the LLM can use. Example:
+
+  ```
+  const dangerNote = entry.dangerLevel === "high"
+    ? "DANGER: high — destructive action. Operator must type-confirm before execution."
+    : entry.dangerLevel === "medium"
+    ? "Caution: medium — modifies system state. Operator approval required."
+    : "Low impact — safe to propose freely.";
+  const reversibleNote = entry.reversible
+    ? "Reversible — can be undone."
+    : "IRREVERSIBLE — prefer reversible alternatives when possible.";
+  ```
+
+  Compose: `${entry.description} ${dangerNote} ${reversibleNote}`.
+
+TASK H13 — Pagination for /api/ai/conversations list
+
+- File: `devops-app/server/routes/ai-conversations.ts`
+- Problem: GET / handler `.limit(50)` hardcoded, no offset/cursor.
+- Fix: Accept `?limit=N&offset=M` query params (validate via Zod: `limit: z.coerce.number().int().min(1).max(200).default(50)`, `offset: z.coerce.number().int().min(0).default(0)`). Pass to drizzle. Also return total count via separate `count(*)` query when offset=0 to support UI pagination ("Page 1 of N").
+
+TASK H14 — Add try/catch around `reserveTokens` call in incident-analyzer
+
+- File: `devops-app/server/services/ai/incident-analyzer.ts` (line ~60)
+- Problem: `await reserveTokens(conversationId, settings.perIncidentTokenCapIn)` — if DB write fails, throw propagates; conversation status may be left as `pending`.
+- Fix: Wrap in try/catch. On failure: set conversation status to `error`, log + emit audit `ai.analysis_failed` with reason `reserve_tokens_failed`, throw `AppError.internalServerError("Failed to reserve tokens")`.
+
+===========================================
+MEDIUM severity (8 tasks)
+===========================================
+
+TASK M1 — compose-static-lint rule #2: correct DB-ports check
+
+- File: `devops-app/server/lib/compose-static-lint.ts`
+- Problem: rule `reserved-ports` checks `< 1024` (privileged-port check). Spec FR-032 says reserved ports = common DB/service ports exposed externally (5432, 6379, 27017, 9200, 9300, 22, 3306, 11211).
+- Fix: Rename rule to `db-ports-exposed`. Check if mapped host port is in `[22, 3306, 5432, 6379, 9200, 9300, 11211, 27017]`. Warning severity. Message: `Service "X" exposes database port N publicly. Use an internal network and bind to localhost only.`
+- Keep both checks if you want (privileged + db-exposed), but the spec-mandated one is db-exposed.
+
+TASK M2 — compose-static-lint: add `info` tier to severity enum
+
+- File: `devops-app/server/lib/compose-static-lint.ts`
+- Problem: type `severity: "error" | "warning"`. Spec FR-032 says `info | warn | error`.
+- Fix: Change to `"info" | "warning" | "error"`. Re-categorize rule #7 (`missing-depends-on`) as `info` severity.
+
+TASK M4 — Replace console.error with logger.error
+
+- File: `devops-app/server/routes/ai-conversations.ts` (line ~76)
+- Problem: `console.error(...)` mixed with `logger.error(...)` elsewhere — anti-pattern §14.
+- Fix: Replace with `logger.error({ ctx: "ai-conversations", err, conversationId: id }, "Async analysis failure");`. Import logger from `../lib/logger.js`.
+
+TASK M6 — Use design tokens in ToolCallApprovalDialog
+
+- File: `devops-app/client/components/ai/ToolCallApprovalDialog.tsx`
+- Problem: `bg-brand-purple` hardcoded — inconsistent with project Tailwind tokens used elsewhere.
+- Fix: Inspect other ai/* components in `devops-app/client/components/ai/` for the canonical brand token. If consistently `bg-brand-purple` is used elsewhere, keep it (it IS the token). If others use semantic tokens like `bg-primary-600` / `bg-action-confirm`, switch this file to match. Goal: consistency across the AI components.
+
+TASK M7 — Consistent logger ctx prefixes
+
+- Files: all `devops-app/server/services/ai/*.ts` and `devops-app/server/lib/{mask-context-document,ai-tool-registry,compose-static-lint}.ts`
+- Problem: inconsistent prefixes — `"ai"`, `"incident-analyzer"`, `"tool-dispatcher"`, `"context-aggregator"`, `"push-subscriber"`, `"budget-enforcer"`.
+- Fix: Standardize to `ai:<service-name>` format. E.g., `ai:incident-analyzer`, `ai:tool-dispatcher`, `ai:context-aggregator`, `ai:push-subscriber`, `ai:budget-enforcer`, `ai:mask-context`, `ai:tool-registry`, `ai:compose-lint`. Update all `logger.{info,warn,error}({ ctx: "..." }, ...)` calls.
+
+TASK M8 — Use `containsHighConfidenceSecrets` or delete it
+
+- File: `devops-app/server/lib/mask-context-document.ts`
+- Problem: function exported, never called — dead code (§4 "negative lines").
+- Fix: Wire into `context-aggregator.ts` as a circuit-breaker: if `containsHighConfidenceSecrets(rawString)` returns true for any source (BEFORE masking), refuse to add that source to context, emit `ai.context_blocked_high_confidence_secret` audit, and log warning. This makes the function load-bearing AND adds a defence-in-depth layer.
+
+TASK M9 — Add ORDER BY for provider selection determinism
+
+- File: `devops-app/server/routes/ai-conversations.ts` (line ~55) AND `devops-app/server/services/ai/push-subscriber.ts` (line ~147)
+- Problem: `db.select().from(aiProviderKeys).where(eq(isActive, true)).limit(1)` — when multiple active providers exist (edge case), result is non-deterministic.
+- Fix: Add `.orderBy(desc(aiProviderKeys.createdAt))` — most recently configured provider wins. Import `desc` from drizzle-orm.
+
+TASK M10 — Error handler for setTimeout DB update in incident-analyzer
+
+- File: `devops-app/server/services/ai/incident-analyzer.ts` (line ~97-104 — wall-clock safety net)
+- Problem: `db.update(...).execute()` inside setTimeout callback — fire-and-forget without .catch().
+- Fix: `db.update(...).execute().catch((err) => logger.error({ ctx: "ai:incident-analyzer", err, conversationId }, "Timeout status update failed"));`
+
+===========================================
+LOW severity (consolidated)
+===========================================
+
+TASK L-ALL — Cleanup batch
+
+- L1: Replace remaining `(req as any).userId` accesses across all AI routes (`ai-tool-calls.ts`, `ai-providers.ts`, `ai-settings.ts`, `ai-conversations.ts`, `ai-compose-review.ts`, `ai-spend.ts`) with `getOperatorId(req)` — if any were missed in the C8 pass. Drop the cast pattern everywhere.
+- L2: Add basic a11y to `ToolCallApprovalDialog.tsx`:
+  - `<dialog>` or `role="dialog"` + `aria-modal="true"` + `aria-labelledby` linking to the h2 id.
+  - Focus trap: `useEffect` on open, set focus to typedConfirm input (high) or first button (low/medium); on close, return focus to trigger.
+  - Escape key handler: pressing Esc calls `onClose()`.
+- L3: Replace hardcoded `seq: 0` / `seq: 1` in incident-analyzer with computed values — likely overlaps with H5; if H5 is done, this is automatically satisfied.
+- L4: Add a comment in `context-aggregator.ts` near `MAX_CONTEXT_CHARS = 400_000` explaining the rough ratio: Anthropic ~3.5 char/token, OpenAI ~4 char/token. Note: 400K chars ≈ 100-115K tokens depending on model. If precise per-model budgets matter later, switch to token-counting via tiktoken or model-specific libraries.
+- L5: Replace `usage.inputTokens || 0` with `usage.inputTokens ?? 0` (nullish coalescing — semantically correct for numeric 0).
+
+===========================================
+VERIFICATION
+===========================================
+
+After applying ALL fixes:
+
+1. `cd devops-app && npm run typecheck` — MUST pass with NO new errors (baseline: 5 pre-existing in schema.ts/main.tsx).
+2. Write summary listing:
+   - Tasks completed per ID (H1-H14, M1-M10, L-ALL)
+   - Tasks skipped + reason (if any)
+   - Any files left in broken state (should be NONE)
+   - Any new migration files added (H1, H3)
+
+Do NOT commit. Do NOT push. Just write files and report.
