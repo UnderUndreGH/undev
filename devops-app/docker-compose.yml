@@ -26,6 +26,9 @@ services:
       - ./data/logs:/app/data/logs
       - ${SSH_KEY_DIR:-~/.ssh}:/app/.ssh:ro
       - /var/run/docker.sock:/var/run/docker.sock
+      - /:/host:ro
+    ports:
+      - "127.0.0.1:${PORT:-3000}:3000"
     environment:
       - DATABASE_URL=postgresql://${POSTGRES_USER:-dashboard}:${POSTGRES_PASSWORD}@devops-db:5432/${POSTGRES_DB:-dashboard}
       - DASHBOARD_KEY=${DASHBOARD_KEY:?required}
@@ -33,15 +36,7 @@ services:
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
       - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
       - NODE_ENV=production
-    networks:
-      - default
-      - caddy
     restart: unless-stopped
 
 volumes:
   pgdata:
-
-networks:
-  caddy:
-    external: true
-    name: ai-twins-network

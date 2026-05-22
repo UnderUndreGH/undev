@@ -55,19 +55,23 @@ function validateRoots(scanRoots: string[]): void {
  * FR-032  `docker compose -f <primary> [-f <extra>] config --format json` → COMPOSE_CONFIG
  * FR-062  Outer `timeout --kill-after=5s 60 bash -c` — primary orphan-reaping defence
  */
-export function buildScanCommand(scanRoots: string[]): string {
+export function buildScanCommand(scanRoots: string[], isLocal = false): string {
   validateRoots(scanRoots);
   if (scanRoots.length === 0) {
     throw new InvalidScanRootError("scanRoots is empty");
   }
 
-  const quotedRoots = scanRoots.map(shellQuote).join(" ");
+  const effectiveRoots = isLocal ? scanRoots.map(r => `/host${r}`) : scanRoots;
+  const quotedRoots = effectiveRoots.map(shellQuote).join(" ");
 
   // The pipeline is assembled as a single heredoc and then emitted as a
   // quoted argument to `bash -c` wrapped by `timeout`. All path values
   // inside the pipeline come from `find`, which quotes its own output via
   // NUL-delimited reads — the outer script never interpolates user paths
   // directly into shell commands.
+  const hostPrefix = isLocal ? "/host" : "";
+  const stripPrefix = isLocal ? ' | sed "s|\\t/host/|\\t/|g"' : "";
+
   const pipeline = `
 set +e
 umask 077

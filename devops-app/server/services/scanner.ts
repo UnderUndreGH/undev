@@ -189,7 +189,8 @@ export async function scan(
     throw new Error("Server has no scanRoots configured");
   }
 
-  const command = buildScanCommand(scanRoots);
+  const isLocal = serverRow.connectionType === "local";
+  const command = buildScanCommand(scanRoots, isLocal);
 
   const startedAt = Date.now();
   let killed = false;
@@ -256,7 +257,8 @@ export async function scan(
 
     // FR-072 visibility: log start/finish with counts (no paths — may leak
      // project names). Bound to console per house style (see notifier.ts, ssh-pool.ts).
-    const parsed = parseScanOutput(output.stdout);
+    const rawStdout = isLocal ? output.stdout.replace(/\/host(?=[/\t,])/g, "") : output.stdout;
+    const parsed = parseScanOutput(rawStdout);
 
     const existingApps = await db
       .select({
