@@ -214,11 +214,22 @@ touch "$LOG_FILE" 2>/dev/null || true
 # --build, docker compose up -d reuses the old image and new migrations are
 # never applied (investigated 2026-05-23 — see
 # specs/016-vpn-features/notes/self-deploy-migrations.md).
+#
+# IMPORTANT: BUILD_FLAG is computed OUTSIDE the `if [[ -z DEPLOY_DETACHED ]]`
+# guard because the detached re-exec below re-runs this entire script with
+# DEPLOY_DETACHED=1 inherited — it skips the if-block but still walks past
+# this assignment. If --build were set inside the if-block, the detached
+# child (the one that actually runs `docker compose up`) would have an empty
+# BUILD_FLAG and the rebuild would be silently skipped. Caught by gemini-code-
+# assist on PR #24.
 BUILD_FLAG=""
+case "$PROJECT_NAME_SAFE" in
+    devops-dashboard|devops-app|underundre-undev) BUILD_FLAG="--build" ;;
+esac
+
 if [[ -z "${DEPLOY_DETACHED:-}" ]]; then
     case "$PROJECT_NAME_SAFE" in
         devops-dashboard|devops-app|underundre-undev)
-            BUILD_FLAG="--build"
             # REPO_DIR is auto-detected from APP_DIR around line 91 — but
             # we're earlier in the file. Re-derive minimally just for the
             # disk-copy path resolution.
