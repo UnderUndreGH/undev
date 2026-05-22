@@ -1,5 +1,8 @@
 import { Client, type ConnectConfig, type ClientChannel } from "ssh2";
 import { createServer, type AddressInfo, type Server, type Socket } from "node:net";
+import { isLocalServer } from "../lib/constants.js";
+import { localExec, localExecStream } from "./local-executor.js";
+import { selfProtection } from "./self-protection.js";
 
 export interface ServerConfig {
   id: string;
@@ -9,6 +12,8 @@ export interface ServerConfig {
   sshAuthMethod: "key" | "password";
   sshPrivateKey?: string | null; // PEM key content
   sshPassword?: string | null;   // password
+  connectionType?: "local" | "ssh" | null;
+  scriptsPath?: string | null;
 }
 
 export interface ExecResult {
@@ -32,6 +37,19 @@ class SSHPool {
   private pool = new Map<string, PoolEntry>();
 
   async connect(server: ServerConfig): Promise<void> {
+    if (isLocalServer(server.id) || server.connectionType === "local") {
+      if (!this.pool.has(server.id)) {
+        this.pool.set(server.id, {
+          client: {} as any,
+          config: server,
+          connected: true,
+          reconnecting: false,
+          retryCount: 0,
+        });
+      }
+      return;
+    }
+
     if (this.pool.has(server.id)) {
       const entry = this.pool.get(server.id)!;
       if (entry.connected) return;
@@ -141,6 +159,14 @@ class SSHPool {
     command: string,
     timeoutMs = 60_000,
   ): Promise<ExecResult> {
+    if (isLocalServer(serverId) || this.pool.get(serverId)?.config?.connectionType === "local") {
+      const selfProtectError = selfProtection.validateDockerCommand(command);
+      if (selfProtectError) {
+        throw new Error(selfProtectError);
+      }
+      return localExec(command, timeoutMs);
+    }
+
     const entry = this.pool.get(serverId);
     if (!entry?.connected) {
       throw new Error(`No active SSH connection for server ${serverId}`);
@@ -193,6 +219,14 @@ class SSHPool {
     serverId: string,
     command: string,
   ): Promise<{ stream: ClientChannel; kill: () => void }> {
+    if (isLocalServer(serverId) || this.pool.get(serverId)?.config?.connectionType === "local") {
+      const selfProtectError = selfProtection.validateDockerCommand(command);
+      if (selfProtectError) {
+        throw new Error(selfProtectError);
+      }
+      return localExecStream(command) as any;
+    }
+
     const entry = this.pool.get(serverId);
     if (!entry?.connected) {
       throw new Error(`No active SSH connection for server ${serverId}`);
@@ -213,6 +247,10 @@ class SSHPool {
   }
 
   disconnect(serverId: string): void {
+    if (isLocalServer(serverId) || this.pool.get(serverId)?.config?.connectionType === "local") {
+      this.pool.delete(serverId);
+      return;
+    }
     const entry = this.pool.get(serverId);
     if (entry) {
       entry.reconnecting = true; // prevent auto-reconnect
@@ -228,6 +266,7 @@ class SSHPool {
   }
 
   isConnected(serverId: string): boolean {
+    if (isLocalServer(serverId) || this.pool.get(serverId)?.config?.connectionType === "local") return true;
     return this.pool.get(serverId)?.connected ?? false;
   }
 
@@ -243,6 +282,13 @@ class SSHPool {
     serverId: string,
     opts: { remoteHost: string; remotePort: number },
   ): Promise<{ localPort: number; close: () => void }> {
+    if (isLocalServer(serverId) || this.pool.get(serverId)?.config?.connectionType === "local") {
+      return Promise.resolve({
+        localPort: opts.remotePort,
+        close: () => {},
+      });
+    }
+
     const entry = this.pool.get(serverId);
     if (!entry?.connected) {
       return Promise.reject(

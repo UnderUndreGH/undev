@@ -8,6 +8,7 @@ import { validateBody } from "../middleware/validate.js";
 import { sshPool } from "../services/ssh-pool.js";
 import { serializeServer, serializeServers } from "../lib/serializer.js";
 import { scriptRunner } from "../services/ssh-executor.js";
+import { isLocalServer } from "../lib/constants.js";
 
 export const serversRouter = Router();
 
@@ -17,6 +18,7 @@ const createServerSchema = z.object({
   port: z.number().int().min(1).max(65535).default(22),
   sshUser: z.string().min(1),
   sshAuthMethod: z.enum(["key", "password"]).default("key"),
+  connectionType: z.enum(["ssh", "local"]).default("ssh"),
   sshPrivateKey: z.string().optional(),
   sshPassword: z.string().optional(),
   scriptsPath: z.string().default(""),
@@ -115,6 +117,10 @@ serversRouter.put("/:id", validateBody(updateServerSchema), async (req, res) => 
 // DELETE /api/servers/:id
 serversRouter.delete("/:id", async (req, res) => {
   const id = req.params.id as string;
+  if (isLocalServer(id)) {
+    res.status(403).json({ error: { code: "FORBIDDEN", message: "Cannot delete the local server entry" } });
+    return;
+  }
   sshPool.disconnect(id);
 
   const [deleted] = await db
@@ -132,6 +138,10 @@ serversRouter.delete("/:id", async (req, res) => {
 // POST /api/servers/:id/verify
 serversRouter.post("/:id/verify", async (req, res) => {
   const id = req.params.id as string;
+  if (isLocalServer(id)) {
+    res.status(400).json({ error: { code: "BAD_REQUEST", message: "Operation not supported on local server" } });
+    return;
+  }
   const [server] = await db
     .select()
     .from(servers)
@@ -186,6 +196,10 @@ const setupSchema = z.object({
 
 serversRouter.post("/:id/setup", validateBody(setupSchema), async (req, res) => {
   const id = req.params.id as string;
+  if (isLocalServer(id)) {
+    res.status(400).json({ error: { code: "BAD_REQUEST", message: "Operation not supported on local server" } });
+    return;
+  }
   const [server] = await db
     .select()
     .from(servers)
@@ -393,6 +407,10 @@ serversRouter.post(
   validateBody(z.object({}).strict()),
   async (req, res) => {
     const id = req.params.id as string;
+    if (isLocalServer(id)) {
+      res.status(400).json({ error: { code: "BAD_REQUEST", message: "Operation not supported on local server" } });
+      return;
+    }
     const [server] = await db
       .select({ id: servers.id })
       .from(servers)
@@ -444,6 +462,10 @@ serversRouter.post(
   validateBody(initialiseBodySchema),
   async (req, res) => {
     const id = req.params.id as string;
+    if (isLocalServer(id)) {
+      res.status(400).json({ error: { code: "BAD_REQUEST", message: "Operation not supported on local server" } });
+      return;
+    }
     const body = req.body as z.infer<typeof initialiseBodySchema>;
     const userId =
       (req as typeof req & { userId?: string }).userId ?? "unknown";
@@ -581,6 +603,10 @@ serversRouter.post(
   validateBody(rotateKeyBodySchema),
   async (req, res) => {
     const id = req.params.id as string;
+    if (isLocalServer(id)) {
+      res.status(400).json({ error: { code: "BAD_REQUEST", message: "Operation not supported on local server" } });
+      return;
+    }
     const body = req.body as z.infer<typeof rotateKeyBodySchema>;
     const userId =
       (req as typeof req & { userId?: string }).userId ?? "unknown";

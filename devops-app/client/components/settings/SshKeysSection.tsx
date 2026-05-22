@@ -18,6 +18,7 @@ interface ServerRow {
   sshAuthMethod: "key" | "password";
   sshKeyFingerprint: string | null;
   sshKeyRotatedAt: string | null;
+  connectionType?: "local" | "ssh" | null;
 }
 
 interface RotateResponse {
@@ -96,7 +97,7 @@ export function SshKeysSection(): React.JSX.Element {
             </tr>
           </thead>
           <tbody>
-            {data.map((s) => (
+            {data.filter((s) => s.connectionType !== "local").map((s) => (
               <tr key={s.id} className="border-t border-gray-800 align-top">
                 <td className="py-1.5">
                   <span className="text-gray-200">{s.label}</span>
