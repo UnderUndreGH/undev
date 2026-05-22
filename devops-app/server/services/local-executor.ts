@@ -98,6 +98,7 @@ export class ClientChannelAdapter extends Duplex {
     child.on("close", (code) => {
       cleanup();
       const finalCode = code ?? exitCode ?? 0;
+      this.emit("exit", finalCode);
       this.emit("close", finalCode);
     });
 
@@ -130,7 +131,7 @@ export async function localExec(command: string, timeoutMs?: number): Promise<Ex
   try {
     return await new Promise<ExecResult>((resolve) => {
       const options = {
-        maxBuffer: 50 * 1024 * 1024,
+        maxBuffer: 10 * 1024 * 1024,
         timeout: timeoutMs,
       };
 

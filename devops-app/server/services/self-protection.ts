@@ -131,7 +131,7 @@ export class SelfProtectionService {
       const action = matches[1].toLowerCase();
       const parts = cmd.split(/\s+/);
       for (const part of parts) {
-        const cleanPart = part.replace(/^-+/, ""); // strip leading dashes
+        const cleanPart = part.replace(/^-+/, "").replace(/['"]/g, ""); // strip leading dashes and quotes
         if (this.isSelf(cleanPart)) {
           if (action === "stop") return "Cannot stop the dashboard container";
           if (action === "rm") return "Cannot remove the dashboard container";

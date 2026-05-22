@@ -185,30 +185,3 @@ dockerRouter.delete("/servers/:serverId/docker/containers/:containerId", async (
     });
   }
 });
-
-// POST /api/servers/:serverId/docker/containers/:containerId/remove
-dockerRouter.post("/servers/:serverId/docker/containers/:containerId/remove", async (req, res) => {
-  const { serverId, containerId } = req.params;
-
-  if (selfProtection.isSelf(containerId)) {
-    res.status(403).json({
-      error: { code: "FORBIDDEN", message: "Cannot remove the dashboard container" }
-    });
-    return;
-  }
-
-  const [server] = await db.select().from(servers).where(eq(servers.id, serverId)).limit(1);
-  if (!server) {
-    res.status(404).json({ error: { code: "NOT_FOUND", message: "Server not found" } });
-    return;
-  }
-
-  try {
-    await sshPool.exec(serverId, `docker rm ${containerId}`);
-    res.json({ success: true });
-  } catch (err: any) {
-    res.status(500).json({
-      error: { code: "DOCKER_ERROR", message: err.message || "Failed to remove container" }
-    });
-  }
-});
