@@ -6,7 +6,7 @@
     "ref": "latest",
     "commit": "104056b5c556882ebcb81dfe1d93fa71d3cd73cd"
   },
-  "installedAt": "2026-05-15T18:47:57.229Z",
+  "installedAt": "2026-05-22T21:52:06.317Z",
   "targets": [
     "claude",
     "copilot",
@@ -579,8 +579,8 @@
       "kind": "source",
       "class": "core",
       "status": "managed",
-      "sourceCanonicalHash": "sha256:1b4c9564197bbcba8b87502aad29694d41fdd9fb9c340dbb5a139839e9583bb3",
-      "localCanonicalHash": "sha256:1b4c9564197bbcba8b87502aad29694d41fdd9fb9c340dbb5a139839e9583bb3"
+      "sourceCanonicalHash": "sha256:17adb990e9c275eabb6dd4dae040573d911c6a29b00c95dd905621776dc01a38",
+      "localCanonicalHash": "sha256:17adb990e9c275eabb6dd4dae040573d911c6a29b00c95dd905621776dc01a38"
     },
     {
       "path": ".claude/commands/speckit.specify.md",
@@ -603,8 +603,8 @@
       "kind": "source",
       "class": "core",
       "status": "managed",
-      "sourceCanonicalHash": "sha256:ddebbbbfe700a588cbee969310cefceacc33123c99c74174a1d0bd15aa445f58",
-      "localCanonicalHash": "sha256:ddebbbbfe700a588cbee969310cefceacc33123c99c74174a1d0bd15aa445f58"
+      "sourceCanonicalHash": "sha256:0b463ba449f4df85b97aff89caf40ba33b0c3765c0998cfce8c317200eeb4552",
+      "localCanonicalHash": "sha256:0b463ba449f4df85b97aff89caf40ba33b0c3765c0998cfce8c317200eeb4552"
     },
     {
       "path": ".claude/commands/speckit.taskstoissues.md",
@@ -1939,8 +1939,8 @@
       "kind": "source",
       "class": "core",
       "status": "managed",
-      "sourceCanonicalHash": "sha256:78ba3425bb431e18c94466f0e6d805c7e916215f38a85efcbb5d102557c0c789",
-      "localCanonicalHash": "sha256:78ba3425bb431e18c94466f0e6d805c7e916215f38a85efcbb5d102557c0c789"
+      "sourceCanonicalHash": "sha256:6d6ae045a5f1cc2c5d6108877801cb61f1b3ff13c8028c8d02451184c56ac605",
+      "localCanonicalHash": "sha256:6d6ae045a5f1cc2c5d6108877801cb61f1b3ff13c8028c8d02451184c56ac605"
     },
     {
       "path": ".github/prompts/backend-specialist.prompt.md",
@@ -2334,8 +2334,8 @@
       "kind": "generated",
       "transformer": "claude-to-copilot-prompt",
       "fromSource": ".claude/commands/speckit.plan.md",
-      "renderedHash": "sha256:03af760ae1d025b8ed7c52b066a5163b16e252ceff30155fcdb084958bae5e9a",
-      "localRenderedHash": "sha256:03af760ae1d025b8ed7c52b066a5163b16e252ceff30155fcdb084958bae5e9a",
+      "renderedHash": "sha256:031defbb38ff2b56e6cca3ee650d8eb40108181c6a5ee1342f514ff533ebc8a5",
+      "localRenderedHash": "sha256:031defbb38ff2b56e6cca3ee650d8eb40108181c6a5ee1342f514ff533ebc8a5",
       "status": "managed"
     },
     {
@@ -2361,8 +2361,8 @@
       "kind": "generated",
       "transformer": "claude-to-copilot-prompt",
       "fromSource": ".claude/commands/speckit.tasks.md",
-      "renderedHash": "sha256:0620dd99c226fb2cd744ac3bd18284cfdec970b8a2181b9d83ae128d5d3e80e5",
-      "localRenderedHash": "sha256:0620dd99c226fb2cd744ac3bd18284cfdec970b8a2181b9d83ae128d5d3e80e5",
+      "renderedHash": "sha256:a16c280124d334c7c7485769a170fce001d55db319a78ab76235e0d99f72be02",
+      "localRenderedHash": "sha256:a16c280124d334c7c7485769a170fce001d55db319a78ab76235e0d99f72be02",
       "status": "managed"
     },
     {
@@ -2667,8 +2667,8 @@
       "kind": "generated",
       "transformer": "claude-to-copilot-root-instructions",
       "fromSource": "CLAUDE.md",
-      "renderedHash": "sha256:aabee5156a625903d12ca3fd7050d16e441e1f080ac29e2fce6057832127bbc5",
-      "localRenderedHash": "sha256:aabee5156a625903d12ca3fd7050d16e441e1f080ac29e2fce6057832127bbc5",
+      "renderedHash": "sha256:efb455011fdc42ef4cdf909a3af97161cf0ca5775198082a15ed95a73f119cd4",
+      "localRenderedHash": "sha256:efb455011fdc42ef4cdf909a3af97161cf0ca5775198082a15ed95a73f119cd4",
       "status": "managed"
     },
     {
@@ -3103,8 +3103,8 @@
       "kind": "generated",
       "transformer": "claude-to-gemini-command",
       "fromSource": ".claude/commands/speckit.plan.md",
-      "renderedHash": "sha256:00aa157fd00da729ce6ea14a29e8bc01f9cc1c196cba1a73b890b2f40046ded3",
-      "localRenderedHash": "sha256:00aa157fd00da729ce6ea14a29e8bc01f9cc1c196cba1a73b890b2f40046ded3",
+      "renderedHash": "sha256:70afdce0690e13f8d2db797f70ed1c92b499e9d5b5c24b5af5da443f6250485e",
+      "localRenderedHash": "sha256:70afdce0690e13f8d2db797f70ed1c92b499e9d5b5c24b5af5da443f6250485e",
       "status": "managed"
     },
     {
@@ -3130,8 +3130,8 @@
       "kind": "generated",
       "transformer": "claude-to-gemini-command",
       "fromSource": ".claude/commands/speckit.tasks.md",
-      "renderedHash": "sha256:302c42a44a557ead11b4c407f1f73b72bc1359d163ebfbaee55d458e8eca3737",
-      "localRenderedHash": "sha256:302c42a44a557ead11b4c407f1f73b72bc1359d163ebfbaee55d458e8eca3737",
+      "renderedHash": "sha256:7bd8d43d4e0d87b8b8df382bf2b287f0a5bf7fa8d95a75f084a95279aa283ce4",
+      "localRenderedHash": "sha256:7bd8d43d4e0d87b8b8df382bf2b287f0a5bf7fa8d95a75f084a95279aa283ce4",
       "status": "managed"
     },
     {
@@ -3914,6 +3914,84 @@
       "fromSource": ".claude/commands/verify.md",
       "renderedHash": "sha256:0c721f75bf2bd8b7d71833cd46d1ec255d6faf54346d8d0811ed19a476335527",
       "localRenderedHash": "sha256:0c721f75bf2bd8b7d71833cd46d1ec255d6faf54346d8d0811ed19a476335527",
+      "status": "managed"
+    },
+    {
+      "path": ".claude/commands/hermes-invocation.md",
+      "kind": "source",
+      "class": "core",
+      "status": "managed",
+      "sourceCanonicalHash": "sha256:a1c448664e4acbb1523face08af3f35723ff07f9220059961f43214f82599993",
+      "localCanonicalHash": "sha256:a1c448664e4acbb1523face08af3f35723ff07f9220059961f43214f82599993"
+    },
+    {
+      "path": ".claude/commands/speckit.full-plan.md",
+      "kind": "source",
+      "class": "core",
+      "status": "managed",
+      "sourceCanonicalHash": "sha256:03f253ce990d4c42ecc8de8fb5c6f1a81ef09ac01f2387e71cb9c43a2b36f69d",
+      "localCanonicalHash": "sha256:03f253ce990d4c42ecc8de8fb5c6f1a81ef09ac01f2387e71cb9c43a2b36f69d"
+    },
+    {
+      "path": ".claude/commands/speckit.full-spec.md",
+      "kind": "source",
+      "class": "core",
+      "status": "managed",
+      "sourceCanonicalHash": "sha256:dcf6bfaa400e352fa484a52bb247dcab4105b2e664dc13f94606a8ecf39ef933",
+      "localCanonicalHash": "sha256:dcf6bfaa400e352fa484a52bb247dcab4105b2e664dc13f94606a8ecf39ef933"
+    },
+    {
+      "path": ".github/prompts/hermes-invocation.prompt.md",
+      "kind": "generated",
+      "transformer": "claude-to-copilot-prompt",
+      "fromSource": ".claude/commands/hermes-invocation.md",
+      "renderedHash": "sha256:87ec034231d2eb26eda7c7b052da9927abcd2a0c44a8b745f60ad17d4176ae8c",
+      "localRenderedHash": "sha256:87ec034231d2eb26eda7c7b052da9927abcd2a0c44a8b745f60ad17d4176ae8c",
+      "status": "managed"
+    },
+    {
+      "path": ".github/prompts/speckit.full-plan.prompt.md",
+      "kind": "generated",
+      "transformer": "claude-to-copilot-prompt",
+      "fromSource": ".claude/commands/speckit.full-plan.md",
+      "renderedHash": "sha256:56fc627cf1ab7312f216433444745e3c3dad296e201daf6d02c0acd00dbeecd7",
+      "localRenderedHash": "sha256:56fc627cf1ab7312f216433444745e3c3dad296e201daf6d02c0acd00dbeecd7",
+      "status": "managed"
+    },
+    {
+      "path": ".github/prompts/speckit.full-spec.prompt.md",
+      "kind": "generated",
+      "transformer": "claude-to-copilot-prompt",
+      "fromSource": ".claude/commands/speckit.full-spec.md",
+      "renderedHash": "sha256:bacf7b4b503811e5a484766b0f961bf2f9c6d04042960e10e9e6097feacbf5d5",
+      "localRenderedHash": "sha256:bacf7b4b503811e5a484766b0f961bf2f9c6d04042960e10e9e6097feacbf5d5",
+      "status": "managed"
+    },
+    {
+      "path": ".gemini/commands/hermes-invocation.toml",
+      "kind": "generated",
+      "transformer": "claude-to-gemini-command",
+      "fromSource": ".claude/commands/hermes-invocation.md",
+      "renderedHash": "sha256:5484c64ad5b7f440e934f14c7eab26d40b1e4d053dfbbb1d9c319611640e14c1",
+      "localRenderedHash": "sha256:5484c64ad5b7f440e934f14c7eab26d40b1e4d053dfbbb1d9c319611640e14c1",
+      "status": "managed"
+    },
+    {
+      "path": ".gemini/commands/speckit.full-plan.toml",
+      "kind": "generated",
+      "transformer": "claude-to-gemini-command",
+      "fromSource": ".claude/commands/speckit.full-plan.md",
+      "renderedHash": "sha256:bcb956ccb4c2b695828cfda485a69d6f41da6cb102cc9280d03c423e9d4f0329",
+      "localRenderedHash": "sha256:bcb956ccb4c2b695828cfda485a69d6f41da6cb102cc9280d03c423e9d4f0329",
+      "status": "managed"
+    },
+    {
+      "path": ".gemini/commands/speckit.full-spec.toml",
+      "kind": "generated",
+      "transformer": "claude-to-gemini-command",
+      "fromSource": ".claude/commands/speckit.full-spec.md",
+      "renderedHash": "sha256:30eaf1c854372bd2f93a4d97cef9c90c6da96ad2f34323799a3c883f32a3a13a",
+      "localRenderedHash": "sha256:30eaf1c854372bd2f93a4d97cef9c90c6da96ad2f34323799a3c883f32a3a13a",
       "status": "managed"
     }
   ]

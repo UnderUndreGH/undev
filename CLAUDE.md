@@ -109,7 +109,7 @@ Full routing rules incl. cross-domain escalation: [`.github/instructions/coding/
 | "brainstorm X", "explore X", "обкашляю X"                    | `/brainstorm X`                                                      | wait for ≥3 options                    |
 | "scrutinize", "find holes", "найди дыры", "devil's advocate" | `/questions_ideas`                                                   | backward/sideways audit                |
 | "fix bug", "debug", "не работает", "сломалось"               | spawn `debugger` agent + `systematic-debugging` skill                | reproduce → isolate → fix              |
-| "implement X", "add feature X" (>3 files OR new domain)      | `/speckit.start` → `.specify` → `.plan` → `.tasks` → `.implement`    | full pipeline                          |
+| "implement X", "add feature X" (>3 files OR new domain)      | `/speckit.start` → `.full-spec` → `.full-plan` → `.implement`        | full pipeline                          |
 | "implement X" (≤3 files, in-domain)                          | identify domain (Agent Routing table) → spawn agent → Plumber's Loop | inline                                 |
 | "review", "code review", "ревью"                             | spawn `code-reviewer` OR `/code_review`                              | structured review                      |
 | "test X", "write tests", "покрой тестами"                    | spawn `test-engineer` + `tdd-workflow` skill                         | RED-GREEN-REFACTOR                     |
@@ -219,6 +219,10 @@ See [`.claude/skills/semver-versioning/SKILL.md`](.claude/skills/semver-versioni
 /speckit.review              # Independent cross-AI review → reviews/<provider>.md (run in Codex/Antigravity/Gemini/Copilot)
 /speckit.implement           # Pre-flight gate: analyze PASS + ≥2 external reviewers PASS (Principle VI)
                              # Override: --override-gate "<reason>" (logged to reviews/_gate-override.md)
+
+# Combo commands (same steps, fewer invocations)
+/speckit.full-spec <desc>    # specify + clarify in one session
+/speckit.full-plan           # plan + tasks in one session (updates specs/main/architecture.md)
 
 # Inspection / observability
 /speckit.status              # Live progress dashboard
