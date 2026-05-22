@@ -157,6 +157,7 @@ async function startup() {
 
   // Step 1: Auto-apply pending migrations
   try {
+    console.log("[startup] Applying database migrations from ./server/db/migrations ...");
     await migrate(db, { migrationsFolder: "./server/db/migrations" });
     console.log("[startup] Database migrations applied");
   } catch (err) {
