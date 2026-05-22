@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { api } from "../lib/api.js";
 import { InterruptedDeploysPanel } from "../components/apps/InterruptedDeploysPanel.js";
 import { AnalyzeButton } from "../components/ai/AnalyzeButton.js";
+import { LocalBadge } from "../components/servers/LocalBadge.js";
 
 interface Server {
   id: string;
@@ -14,6 +15,7 @@ interface Server {
   sshUser: string;
   sshAuthMethod: "key" | "password";
   lastHealthCheck: string | null;
+  connectionType?: "local" | "ssh" | null;
 }
 
 interface AddServerPayload {
@@ -138,14 +140,15 @@ export function DashboardPage() {
               className="bg-gray-900 border border-gray-800 rounded-lg p-4 hover:border-gray-600 transition-colors group"
             >
               <div className="flex items-center justify-between mb-2">
-                <h3 className="font-semibold group-hover:text-blue-400 transition-colors">
+                <h3 className="font-semibold group-hover:text-blue-400 transition-colors flex items-center gap-2">
                   {server.label}
+                  {server.connectionType === "local" && <LocalBadge />}
                 </h3>
                 <StatusBadge status={server.status} />
               </div>
               <div className="flex items-center justify-between mt-2">
                 <p className="text-sm text-gray-400">
-                  {server.host}:{server.port}
+                  {server.connectionType === "local" ? "Local Server" : `${server.host}:${server.port}`}
                 </p>
                 {server.status === 'offline' && (
                   <AnalyzeButton targetKind="server" targetId={server.id} variant="ghost" className="!p-1" />

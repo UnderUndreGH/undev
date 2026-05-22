@@ -15,8 +15,10 @@ import { db } from "../db/index.js";
 import { servers } from "../db/schema.js";
 import { sshPool } from "../services/ssh-pool.js";
 import { logger } from "./logger.js";
+import { isLocalServer } from "./constants.js";
 
 export async function ensureSshConnected(serverId: string): Promise<boolean> {
+  if (isLocalServer(serverId)) return true;
   if (sshPool.isConnected(serverId)) return true;
   const [server] = await db
     .select()
@@ -24,6 +26,17 @@ export async function ensureSshConnected(serverId: string): Promise<boolean> {
     .where(eq(servers.id, serverId))
     .limit(1);
   if (!server) return false;
+  if (server.connectionType === "local") {
+    await sshPool.connect({
+      id: server.id,
+      host: server.host,
+      port: server.port,
+      sshUser: server.sshUser,
+      sshAuthMethod: "key",
+      connectionType: "local",
+    } as any);
+    return true;
+  }
   try {
     await sshPool.connect({
       id: server.id,
@@ -62,6 +75,17 @@ export async function restoreSshPoolFromDb(): Promise<void> {
   const results = await Promise.allSettled(
     rows.map(async (server) => {
       try {
+        if (server.connectionType === "local" || isLocalServer(server.id)) {
+          await sshPool.connect({
+            id: server.id,
+            host: server.host,
+            port: server.port,
+            sshUser: server.sshUser,
+            sshAuthMethod: "key",
+            scriptsPath: server.scriptsPath,
+          });
+          return { id: server.id, label: server.label, ok: true, isLocal: true };
+        }
         await sshPool.connect({
           id: server.id,
           host: server.host,
@@ -71,12 +95,13 @@ export async function restoreSshPoolFromDb(): Promise<void> {
           sshPrivateKey: server.sshPrivateKey,
           sshPassword: server.sshPassword,
         });
-        return { id: server.id, label: server.label, ok: true };
+        return { id: server.id, label: server.label, ok: true, isLocal: false };
       } catch (err) {
         return {
           id: server.id,
           label: server.label,
           ok: false,
+          isLocal: server.connectionType === "local" || isLocalServer(server.id),
           err: err instanceof Error ? err.message : String(err),
         };
       }
@@ -87,10 +112,17 @@ export async function restoreSshPoolFromDb(): Promise<void> {
   for (const r of results) {
     if (r.status === "fulfilled" && r.value.ok) {
       okCount++;
-      logger.info(
-        { ctx: "ssh-boot-restore", serverId: r.value.id, label: r.value.label },
-        "SSH connected",
-      );
+      if (r.value.isLocal) {
+        logger.info(
+          { ctx: "ssh-boot-restore", serverId: r.value.id, label: r.value.label },
+          "Local transport ready",
+        );
+      } else {
+        logger.info(
+          { ctx: "ssh-boot-restore", serverId: r.value.id, label: r.value.label },
+          "SSH connected",
+        );
+      }
     } else {
       failCount++;
       const v = r.status === "fulfilled" ? r.value : { id: "?", label: "?", err: r.reason };

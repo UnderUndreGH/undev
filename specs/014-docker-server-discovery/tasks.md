@@ -16,10 +16,9 @@ description: "Task list template for feature implementation with agent routing a
 
 **Purpose**: Project initialization, basic structure, shared dependency installs
 
-- [ ] T001 [SETUP] Verify environment and review `specs/014-docker-server-discovery` artifacts before starting implementation
-- [ ] T002 [OPS] Modify `docker-compose.yml` in root to mount `/var/run/docker.sock` and set `pid: host` for dashboard service
-- [ ] T003 [OPS] Update `Dockerfile` to install `bash` and `docker-cli` in the final alpine stage
-
+- [X] T001 [SETUP] Verify environment and review `specs/014-docker-server-discovery` artifacts before starting implementation
+- [X] T002 [OPS] Modify `docker-compose.yml` in root to mount `/var/run/docker.sock` and set `pid: host` for dashboard service
+- [X] T003 [OPS] Update `Dockerfile` to install `bash` and `docker-cli` in the final alpine stage
 ---
 
 ## Phase 2: Foundational (Blocking Prerequisites)
@@ -27,8 +26,7 @@ description: "Task list template for feature implementation with agent routing a
 **Purpose**: Core infrastructure that MUST be complete before ANY user story can be implemented
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete (phase = sync barrier)
-
-- [ ] T004 [DB] Add `connectionType` column to `servers` table in `devops-app/server/db/schema.ts` (default 'ssh', include Zod enum validation)
+- [X] T004 [DB] Add `connectionType` column to `servers` table in `devops-app/server/db/schema.ts` (default 'ssh', include Zod enum validation)
 - [ ] T005 [DB] Generate Drizzle migration for the new column (use `npm run db:generate` or write manually to `devops-app/server/db/migrations/0015_local_server_transport.sql` including the enum check constraint and index)
 - [ ] T006 [BE] Create `devops-app/server/lib/constants.ts` defining and exporting the deterministic `LOCAL_SERVER_ID` UUID v5 constant and `isLocalServer()` helper
 - [ ] T007 [BE] Create `devops-app/server/services/local-executor.ts` implementing `ClientChannelAdapter` and proxy local functions (`localExec`, `localExecStream`) with `maxBuffer: 50MB` and max 10 concurrent spawns semaphore

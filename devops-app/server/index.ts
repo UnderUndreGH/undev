@@ -53,6 +53,8 @@ import { startArchiverCron } from "./services/ai/archiver.js";
 import { startPushDedupCleanup, stopPushDedupCleanup } from "./services/ai/push-subscriber.js";
 import { startChallengeCleanup, stopChallengeCleanup } from "./routes/ai-tool-calls.js";
 import { initInterruptedDeploysCache } from "./services/interrupted-deploys-scanner.js";
+import { seedLocalServer } from "./lib/local-server-seed.js";
+import { selfProtection } from "./services/self-protection.js";
 
 // ── Crash-shield (incident 2026-05-03) ──────────────────────────────────────
 // ssh2 emits 'error' on the underlying TCP Socket when a `forwardOut` channel
@@ -160,6 +162,20 @@ async function startup() {
   } catch (err) {
     console.error("[startup] Migration failed:", err);
     process.exit(1);
+  }
+
+  // Step 1a: Seed local server row (Feature 014)
+  try {
+    await seedLocalServer();
+  } catch (err) {
+    logger.error({ err }, "[startup] Local server seeding failed");
+  }
+
+  // Initialize self-protection (Feature 014)
+  try {
+    await selfProtection.initialize();
+  } catch (err) {
+    logger.error({ err }, "[startup] Self-protection initialization failed");
   }
 
   // Feature 012 T058: scan for interrupted blue/green deploys at boot.

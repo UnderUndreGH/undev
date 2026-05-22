@@ -21,9 +21,11 @@ services:
     depends_on:
       devops-db:
         condition: service_healthy
+    pid: "host"
     volumes:
       - ./data/logs:/app/data/logs
       - ${SSH_KEY_DIR:-~/.ssh}:/app/.ssh:ro
+      - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - DATABASE_URL=postgresql://${POSTGRES_USER:-dashboard}:${POSTGRES_PASSWORD}@devops-db:5432/${POSTGRES_DB:-dashboard}
       - DASHBOARD_KEY=${DASHBOARD_KEY:?required}

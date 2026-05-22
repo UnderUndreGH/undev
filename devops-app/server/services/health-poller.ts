@@ -51,15 +51,26 @@ class HealthPoller {
       const [row] = await db.select().from(servers).where(eq(servers.id, serverId));
       if (!row) return null;
       try {
-        await sshPool.connect({
-          id: row.id,
-          host: row.host,
-          port: row.port,
-          sshUser: row.sshUser,
-          sshAuthMethod: (row.sshAuthMethod as "key" | "password") ?? "key",
-          sshPrivateKey: row.sshPrivateKey,
-          sshPassword: row.sshPassword,
-        });
+        if (row.connectionType === "local") {
+          await sshPool.connect({
+            id: row.id,
+            host: row.host,
+            port: row.port,
+            sshUser: row.sshUser,
+            sshAuthMethod: "key",
+            connectionType: "local",
+          } as any);
+        } else {
+          await sshPool.connect({
+            id: row.id,
+            host: row.host,
+            port: row.port,
+            sshUser: row.sshUser,
+            sshAuthMethod: (row.sshAuthMethod as "key" | "password") ?? "key",
+            sshPrivateKey: row.sshPrivateKey,
+            sshPassword: row.sshPassword,
+          });
+        }
       } catch {
         await db
           .update(servers)

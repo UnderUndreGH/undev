@@ -18,6 +18,7 @@ export const servers = pgTable("servers", {
   port: integer("port").notNull().default(22),
   sshUser: text("ssh_user").notNull(),
   sshAuthMethod: text("ssh_auth_method").notNull().default("key"), // key | password
+  connectionType: text("connection_type").notNull().default("ssh"), // ssh | local
   sshPrivateKey: text("ssh_private_key"), // PEM key content (for auth_method=key)
   sshPassword: text("ssh_password"), // password (for auth_method=password)
   scriptsPath: text("scripts_path").notNull(),

@@ -6,6 +6,7 @@ import { validateBody } from "../middleware/validate.js";
 import { db } from "../db/index.js";
 import { servers } from "../db/schema.js";
 import { eq } from "drizzle-orm";
+import { selfProtection } from "../services/self-protection.js";
 
 export const dockerRouter = Router();
 
@@ -25,7 +26,7 @@ dockerRouter.get("/servers/:serverId/docker", async (req, res) => {
   try {
     const [dfResult, psResult] = await Promise.all([
       sshPool.exec(serverId, "docker system df --format json 2>/dev/null || echo '{}'"),
-      sshPool.exec(serverId, 'docker ps -a --format \'{"name":"{{.Names}}","status":"{{.Status}}","image":"{{.Image}}"}\''),
+      sshPool.exec(serverId, 'docker ps -a --format \'{"id":"{{.ID}}","name":"{{.Names}}","status":"{{.Status}}","image":"{{.Image}}"}\''),
     ]);
 
     const containers = psResult.stdout
@@ -34,7 +35,11 @@ dockerRouter.get("/servers/:serverId/docker", async (req, res) => {
       .filter(Boolean)
       .map((line) => {
         try {
-          return JSON.parse(line);
+          const container = JSON.parse(line);
+          return {
+            ...container,
+            isSelf: selfProtection.isSelf(container.id) || selfProtection.isSelf(container.name),
+          };
         } catch {
           return null;
         }
@@ -76,10 +81,13 @@ dockerRouter.post(
     }
 
     try {
-      // Inline docker cleanup — no external script needed
+      // Exclude self compose project from aggressive/safe cleanup
+      const project = selfProtection.composeProject;
+      const projectFilter = project ? ` --filter "label!=com.docker.compose.project=${project}"` : "";
+
       const cmd = mode === "aggressive"
-        ? "docker system prune -af --volumes 2>&1"
-        : "docker system prune -f 2>&1";
+        ? `docker system prune -af --volumes${projectFilter} 2>&1`
+        : `docker system prune -f${projectFilter} 2>&1`;
 
       const { jobId } = await scriptRunner.runScript(
         serverId,
@@ -96,3 +104,84 @@ dockerRouter.post(
     }
   },
 );
+
+// POST /api/servers/:serverId/docker/containers/:containerId/stop
+dockerRouter.post("/servers/:serverId/docker/containers/:containerId/stop", async (req, res) => {
+  const { serverId, containerId } = req.params;
+
+  if (selfProtection.isSelf(containerId)) {
+    res.status(403).json({
+      error: { code: "FORBIDDEN", message: "Cannot stop the dashboard container" }
+    });
+    return;
+  }
+
+  const [server] = await db.select().from(servers).where(eq(servers.id, serverId)).limit(1);
+  if (!server) {
+    res.status(404).json({ error: { code: "NOT_FOUND", message: "Server not found" } });
+    return;
+  }
+
+  try {
+    await sshPool.exec(serverId, `docker stop ${containerId}`);
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({
+      error: { code: "DOCKER_ERROR", message: err.message || "Failed to stop container" }
+    });
+  }
+});
+
+// POST /api/servers/:serverId/docker/containers/:containerId/kill
+dockerRouter.post("/servers/:serverId/docker/containers/:containerId/kill", async (req, res) => {
+  const { serverId, containerId } = req.params;
+
+  if (selfProtection.isSelf(containerId)) {
+    res.status(403).json({
+      error: { code: "FORBIDDEN", message: "Cannot kill the dashboard container" }
+    });
+    return;
+  }
+
+  const [server] = await db.select().from(servers).where(eq(servers.id, serverId)).limit(1);
+  if (!server) {
+    res.status(404).json({ error: { code: "NOT_FOUND", message: "Server not found" } });
+    return;
+  }
+
+  try {
+    await sshPool.exec(serverId, `docker kill ${containerId}`);
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({
+      error: { code: "DOCKER_ERROR", message: err.message || "Failed to kill container" }
+    });
+  }
+});
+
+// DELETE /api/servers/:serverId/docker/containers/:containerId
+dockerRouter.delete("/servers/:serverId/docker/containers/:containerId", async (req, res) => {
+  const { serverId, containerId } = req.params;
+
+  if (selfProtection.isSelf(containerId)) {
+    res.status(403).json({
+      error: { code: "FORBIDDEN", message: "Cannot remove the dashboard container" }
+    });
+    return;
+  }
+
+  const [server] = await db.select().from(servers).where(eq(servers.id, serverId)).limit(1);
+  if (!server) {
+    res.status(404).json({ error: { code: "NOT_FOUND", message: "Server not found" } });
+    return;
+  }
+
+  try {
+    await sshPool.exec(serverId, `docker rm ${containerId}`);
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({
+      error: { code: "DOCKER_ERROR", message: err.message || "Failed to remove container" }
+    });
+  }
+});

@@ -9,6 +9,7 @@ import { BackupsPanel } from "../components/backups/BackupsPanel.js";
 import { LogViewer } from "../components/logs/LogViewer.js";
 import { DockerPanel } from "../components/docker/DockerPanel.js";
 import { InitialiseWizard } from "../components/servers/InitialiseWizard.js";
+import { LocalBadge } from "../components/servers/LocalBadge.js";
 import { ScriptsTab } from "../components/scripts/ScriptsTab.js";
 import {
   AddAppForm,
@@ -40,6 +41,7 @@ interface Server {
   setupState?: "unknown" | "needs_initialisation" | "initialising" | "ready";
   cloudProvider?: "gcp" | "aws" | "do" | "hetzner" | "vanilla" | null;
   sshKeyFingerprint?: string | null;
+  connectionType?: "local" | "ssh" | null;
 }
 
 interface Application {
@@ -292,13 +294,14 @@ export function ServerPage() {
             className={`w-2.5 h-2.5 rounded-full ${statusColors[server.status] ?? statusColors.unknown}`}
           />
           <h1 className="text-2xl font-bold">{server.label}</h1>
+          {server.connectionType === "local" && <LocalBadge />}
           <AiBadge targetKind="server" targetId={server.id} />
           <AnalyzeButton targetKind="server" targetId={server.id} variant="secondary" />
         </div>
         <p className="text-sm text-gray-400 mt-1">
-          {server.host}:{server.port} &middot; {server.sshUser}
+          {server.connectionType === "local" ? "Local Server" : `${server.host}:${server.port} · ${server.sshUser}`}
         </p>
-        {server.setupState === "needs_initialisation" && (
+        {server.setupState === "needs_initialisation" && server.connectionType !== "local" && (
           <div className="mt-3">
             <button
               type="button"
@@ -313,7 +316,7 @@ export function ServerPage() {
             </p>
           </div>
         )}
-        {server.setupState === "initialising" && (
+        {server.setupState === "initialising" && server.connectionType !== "local" && (
           <p className="text-xs text-yellow-400 mt-2">
             Initialisation in progress…
           </p>
