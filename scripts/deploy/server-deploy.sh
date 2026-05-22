@@ -208,6 +208,25 @@ touch "$LOG_FILE" 2>/dev/null || true
 # Trade-off: dashboard runner sees exit 0 immediately and reports "success"
 # while detached deploy continues. Operator monitors via tail $LOG_FILE or
 # the final Telegram (success/fail) the detached run posts itself.
+#
+# Self-deploy also needs --build to ensure the Docker image is rebuilt with
+# new code (including new DB migration files baked into the image). Without
+# --build, docker compose up -d reuses the old image and new migrations are
+# never applied (investigated 2026-05-23 — see
+# specs/016-vpn-features/notes/self-deploy-migrations.md).
+#
+# IMPORTANT: BUILD_FLAG is computed OUTSIDE the `if [[ -z DEPLOY_DETACHED ]]`
+# guard because the detached re-exec below re-runs this entire script with
+# DEPLOY_DETACHED=1 inherited — it skips the if-block but still walks past
+# this assignment. If --build were set inside the if-block, the detached
+# child (the one that actually runs `docker compose up`) would have an empty
+# BUILD_FLAG and the rebuild would be silently skipped. Caught by gemini-code-
+# assist on PR #24.
+BUILD_FLAG=""
+case "$PROJECT_NAME_SAFE" in
+    devops-dashboard|devops-app|underundre-undev) BUILD_FLAG="--build" ;;
+esac
+
 if [[ -z "${DEPLOY_DETACHED:-}" ]]; then
     case "$PROJECT_NAME_SAFE" in
         devops-dashboard|devops-app|underundre-undev)
@@ -475,7 +494,7 @@ else
   echo "  ↳ no container_name declarations found"
 fi
 
-if ! docker compose -f "$COMPOSE_FILE" $DASHBOARD_OVERRIDE_FLAG $ENV_FLAG up -d 2>&1; then
+if ! docker compose -f "$COMPOSE_FILE" $DASHBOARD_OVERRIDE_FLAG $ENV_FLAG up -d $BUILD_FLAG 2>&1; then
   COMPOSE_EXIT=$?
   echo "❌ docker compose up exited $COMPOSE_EXIT"
   if [[ -n "${ON_FAIL_HOOK:-}" ]]; then
