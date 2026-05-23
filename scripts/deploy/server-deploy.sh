@@ -431,10 +431,18 @@ fi
 # prefix and re-export into the current shell so `docker compose build/up` can
 # resolve them.  .env file values take precedence; this is a fallback for vars
 # only present in the dashboard's encrypted env-vars store.
+echo "🔍 Debugging SECRET_* variables..."
+echo "All env starting with SECRET_:"
+env | grep '^SECRET_' || echo "none found in env"
+echo "Bash internal expansion:"
 for _skey in ${!SECRET_@}; do
     _bare_key="${_skey#SECRET_}"
+    echo "  Found secret key: $_skey, mapping to: $_bare_key"
     if [[ -z "${!_bare_key+x}" ]]; then
+        echo "    Exporting $_bare_key"
         export "$_bare_key"="${!_skey}"
+    else
+        echo "    $_bare_key is already set"
     fi
 done
 unset _skey _bare_key
