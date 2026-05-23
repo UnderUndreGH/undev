@@ -367,6 +367,19 @@ class ScriptsRunner {
       );
     } else {
       const { args, envExports } = serialiseParams(entry.params, parsed);
+      // Feature 011 T005: Map parameters to INITIALISE_* env vars for VPS setup.
+      // ufwPorts is joined as comma-separated integers. args is cleared to
+      // prevent polluting positional argv ($1, $2, etc.) in initialise.sh.
+      if (scriptId === "server-ops/initialise") {
+        envExports.INITIALISE_DEPLOY_USER = String(parsed.deployUser);
+        envExports.INITIALISE_SWAP_SIZE = String(parsed.swapSize);
+        envExports.INITIALISE_UFW_PORTS = Array.isArray(parsed.ufwPorts)
+          ? parsed.ufwPorts.join(",")
+          : "";
+        envExports.INITIALISE_USE_NO_PTY = String(parsed.useNoPty);
+        envExports.INITIALISE_PUBKEY = String(parsed.pubkey);
+        args.length = 0;
+      }
       // Feature 010 T011/T015 — inject lifecycle hooks for deploy entries.
       // Looks up the application row by `remote_path = appDir` and exports
       // PRE_DEPLOY_HOOK / POST_DEPLOY_HOOK / ON_FAIL_HOOK env vars that
