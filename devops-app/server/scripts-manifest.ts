@@ -226,7 +226,7 @@ export const manifest: ScriptManifestEntry[] = [
   },
   // server-ops/*
   {
-    // Feature 011 T003 — Initialise a fresh VPS via scripts/server/setup-vps.sh.
+    // Feature 011 T003 — Initialise a fresh VPS via scripts/server/initialise.sh.
     // pubkey is the OpenSSH public key to install for the deploy user; not a
     // secret per se but its installation grants login authority on the target.
     id: "server-ops/initialise",

@@ -110,7 +110,7 @@ if [[ ! -d "$APP_DIR" ]]; then
         # Parent-dir creation strategy:
         #   1. Plain mkdir — works for paths under $HOME, /tmp, etc.
         #   2. Fallback to sudo + chown when parent is root-owned (e.g.
-        #      /var/www, /srv, /opt). Deploy user has NOPASSWD per setup-vps.sh.
+        #      /var/www, /srv, /opt). Deploy user has NOPASSWD per initialise.sh.
         #   3. After parent ready, pre-create APP_DIR with deploy-user ownership
         #      so subsequent `git clone` (which runs as deploy user, not root)
         #      can write into it.

@@ -3,10 +3,10 @@
 # Fresh VPS setup: deploy user, SSH hardening, swap, firewall.
 #
 # Run as root on a fresh Ubuntu/Debian VPS:
-#   curl -sL https://raw.githubusercontent.com/UnderUndre/undev/main/scripts/server/setup-vps.sh | bash -s -- <deploy_user>
+#   curl -sL https://raw.githubusercontent.com/UnderUndre/undev/main/scripts/server/initialise.sh | bash -s -- <deploy_user>
 #
 # Or locally:
-#   ssh root@<server> < scripts/server/setup-vps.sh
+#   ssh root@<server> < scripts/server/initialise.sh
 # ─────────────────────────────────────────────────
 
 set -euo pipefail

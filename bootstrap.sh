@@ -50,7 +50,7 @@ fi
 echo "▸ Checking prerequisites..."
 for cmd in docker git; do
     if ! command -v "$cmd" >/dev/null; then
-        echo "❌ $cmd is not installed. Run scripts/server/setup-vps.sh first."
+        echo "❌ $cmd is not installed. Run scripts/server/initialise.sh first."
         exit 1
     fi
 done

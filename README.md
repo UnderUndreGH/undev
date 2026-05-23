@@ -18,7 +18,7 @@ On a fresh Ubuntu/Debian VPS as root:
 
 ```bash
 # Base setup — Docker, deploy user, firewall, swap.
-curl -sL https://raw.githubusercontent.com/UnderUndre/undev/main/scripts/server/setup-vps.sh | bash -s -- deploy
+curl -sL https://raw.githubusercontent.com/UnderUndre/undev/main/scripts/server/initialise.sh | bash -s -- deploy
 
 # Switch to the deploy user, then:
 git clone https://github.com/UnderUndre/undev.git
@@ -105,7 +105,7 @@ scripts/                    # Bash scripts (parameterized via env vars)
     backup.sh               #   PostgreSQL backup with retention
     restore.sh              #   PostgreSQL restore from dump
   server/
-    setup-vps.sh            #   Fresh VPS bootstrap (user, ssh, ufw, node, pm2)
+    initialise.sh           #   Fresh VPS bootstrap (user, ssh, ufw, node, pm2)
     setup-ssl.sh            #   Let's Encrypt + auto-renewal
     health-check.sh         #   Disk/memory/CPU/services check
   docker/

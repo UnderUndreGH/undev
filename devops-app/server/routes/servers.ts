@@ -218,7 +218,7 @@ serversRouter.post("/:id/setup", validateBody(setupSchema), async (req, res) => 
     const scriptArgs = tasks.map((t: string) => `--task=${t}`);
     const { jobId } = await scriptRunner.runScript(
       server.id,
-      "~/.undev/scripts/setup/setup-vps.sh",
+      "~/.undev/scripts/setup/initialise.sh",
       scriptArgs,
     );
 
@@ -491,7 +491,7 @@ serversRouter.post(
       return;
     }
 
-    // Derive pubkey for setup-vps.sh's INITIALISE_PUBKEY env var.
+    // Derive pubkey for initialise.sh's INITIALISE_PUBKEY env var.
     //
     // 3 paths:
     //   (a) server already has a managed Ed25519 key → re-derive pubkey
@@ -499,7 +499,7 @@ serversRouter.post(
     //   (b) server is in password mode (initial bootstrap) → generate a
     //       fresh keypair NOW; pass it to initialiseServer as `managedKey`
     //       so the success-callback rotates the credential atomically.
-    //       Without this, setup-vps.sh disables password auth on the
+    //       Without this, initialise.sh disables password auth on the
     //       target without installing any key — locked-out server.
     //   (c) neither — fail loud rather than silently drop into mode (b)
     //       since the operator may not be expecting credential rotation.

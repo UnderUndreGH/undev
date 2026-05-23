@@ -117,7 +117,7 @@ export function InitialiseWizard({
 
           {step === 1 && (
             <div className="space-y-2 text-sm text-gray-300">
-              <p>This will run <code>setup-vps.sh</code> on the target:</p>
+              <p>This will run <code>initialise.sh</code> on the target:</p>
               <ul className="list-disc pl-5 text-gray-400 text-xs space-y-1">
                 <li>Install Docker, fail2ban, ufw</li>
                 <li>Create the deploy user with NOPASSWD sudo</li>

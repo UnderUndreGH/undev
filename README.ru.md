@@ -24,7 +24,7 @@ scripts/                    # Bash-скрипты (параметризован�
     backup.sh               #   Бэкап PostgreSQL с ротацией
     restore.sh              #   Восстановление PostgreSQL из дампа
   server/
-    setup-vps.sh            #   Настройка свежего VPS (юзер, ssh, ufw, node, pm2)
+    initialise.sh           #   Настройка свежего VPS (юзер, ssh, ufw, node, pm2)
     setup-ssl.sh            #   Let's Encrypt + автообновление
     health-check.sh         #   Проверка диска/памяти/CPU/сервисов
   docker/
