@@ -12,6 +12,7 @@ import { SettingsPage } from "./pages/SettingsPage.js";
 import { RunsPage } from "./pages/RunsPage.js";
 import { IncidentPage } from "./pages/IncidentPage.js";
 import { IncidentsListPage } from "./pages/IncidentsListPage.js";
+import { VpnPage } from "./pages/VpnPage.js";
 import { RunDetail } from "./components/scripts/RunDetail.js";
 import { Layout } from "./components/layout/Layout.js";
 
@@ -41,6 +42,7 @@ export function App() {
             <Route path="/runs/:runId" element={<RunDetail />} />
             <Route path="/incidents" element={<IncidentsListPage />} />
             <Route path="/incidents/:id" element={<IncidentPage />} />
+            <Route path="/vpn" element={<VpnPage />} />
             <Route path="/settings" element={<SettingsPage />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />

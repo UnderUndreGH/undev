@@ -11,14 +11,15 @@ interface ClientMessage {
   action: "subscribe" | "unsubscribe" | "cancel";
   channel?: string;
   jobId?: string;
+  executionId?: string;
 }
 
 export function setupWebSocket(wss: WebSocketServer): void {
   wss.on("connection", async (ws: WebSocket, req: IncomingMessage) => {
-    // Auth: validate session cookie
+    // Auth: validate session cookie (T017a — close with 1008 per FR-019)
     const userId = await authenticateWs(req);
     if (!userId) {
-      ws.close(4001, "Unauthorized");
+      ws.close(1008, "Policy Violation: authentication required");
       return;
     }
 
@@ -34,7 +35,7 @@ export function setupWebSocket(wss: WebSocketServer): void {
     ws.on("message", (raw) => {
       try {
         const msg: ClientMessage = JSON.parse(raw.toString());
-        handleMessage(ws, msg);
+        handleMessage(ws, msg, userId);
       } catch {
         ws.send(JSON.stringify({ type: "error", data: { message: "Invalid message format" } }));
       }
@@ -50,7 +51,7 @@ export function setupWebSocket(wss: WebSocketServer): void {
   });
 }
 
-function handleMessage(ws: WebSocket, msg: ClientMessage): void {
+function handleMessage(ws: WebSocket, msg: ClientMessage, userId: string): void {
   switch (msg.action) {
     case "subscribe":
       if (msg.channel) {
@@ -65,6 +66,12 @@ function handleMessage(ws: WebSocket, msg: ClientMessage): void {
           const jobId = msg.channel.slice(4);
           wireJobToChannel(jobId);
           replayJobBacklog(ws, jobId);
+        }
+
+        // Feature 016 T017: script execution live output via executionBus
+        if (msg.channel.startsWith("execution:")) {
+          const executionId = msg.channel.slice("execution:".length);
+          wireExecutionToChannel(ws, executionId, userId);
         }
       }
       break;
@@ -154,4 +161,84 @@ async function authenticateWs(
   } catch {
     return null;
   }
+}
+
+// ── Feature 016 T017: Script execution live output ─────────────────────────
+// Tracks executionBus subscriptions so we can clean up on WS close.
+
+import { scriptRuns } from "../db/schema.js";
+import { executionBus } from "../services/script-executor.js";
+
+const wiredExecutions = new Map<string, Set<WebSocket>>();
+
+function wireExecutionToChannel(
+  ws: WebSocket,
+  executionId: string,
+  userId: string,
+): void {
+  const channel = `execution:${executionId}`;
+
+  // T017a: Ownership check — verify the script_run belongs to this user.
+  // Doing it async; if unauthorized, close the subscription.
+  void (async () => {
+    try {
+      const [run] = await db
+        .select({ userId: scriptRuns.userId })
+        .from(scriptRuns)
+        .where(eq(scriptRuns.id, executionId))
+        .limit(1);
+
+      if (!run || run.userId !== userId) {
+        // T017a: close with 1008 per FR-019 — policy violation
+        ws.close(1008, "Policy Violation: execution ownership check failed");
+        return;
+      }
+
+      // Subscribe to executionBus events
+      if (!wiredExecutions.has(executionId)) {
+        wiredExecutions.set(executionId, new Set());
+      }
+      wiredExecutions.get(executionId)!.add(ws);
+
+      const handler = (event: { type: string; data: unknown }) => {
+        if (ws.readyState !== ws.OPEN) {
+          cleanup();
+          return;
+        }
+        ws.send(
+          JSON.stringify({
+            channel,
+            type: event.type,
+            data: event.data,
+            timestamp: new Date().toISOString(),
+          }),
+        );
+        // Cleanup on terminal event
+        if (event.type === "exit") {
+          cleanup();
+        }
+      };
+
+      executionBus.on(executionId, handler);
+
+      const cleanup = () => {
+        executionBus.off(executionId, handler);
+        const set = wiredExecutions.get(executionId);
+        if (set) {
+          set.delete(ws);
+          if (set.size === 0) {
+            wiredExecutions.delete(executionId);
+          }
+        }
+      };
+    } catch (err) {
+      ws.send(
+        JSON.stringify({
+          channel,
+          type: "error",
+          data: { message: "Failed to subscribe to execution" },
+        }),
+      );
+    }
+  })();
 }
