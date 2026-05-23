@@ -22,23 +22,23 @@ export function ScriptOutput({ executionId }: Props): React.JSX.Element {
     setExecution(null);
 
     const protocol = location.protocol === "https:" ? "wss:" : "ws:";
-    const ws = new WebSocket(
-      `${protocol}//${location.host}/ws/executions/${executionId}`,
-    );
+    const ws = new WebSocket(`${protocol}//${location.host}/ws`);
+    ws.onopen = () => {
+      ws.send(JSON.stringify({ action: "subscribe", channel: `execution:${executionId}` }));
+    };
 
     ws.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data);
-        if (msg.stream === "stdout" || msg.stream === "stderr") {
+        if (msg.type === "stdout" || msg.type === "stderr") {
           setLines((prev) => [
             ...prev,
-            { stream: msg.stream, text: msg.data ?? "" },
+            { stream: msg.type, text: msg.data ?? "" },
           ]);
-        } else if (msg.type === "complete" || msg.status) {
-          // Final status update
+        } else if (msg.type === "exit" || msg.type === "error") {
           setLines((prev) => [
             ...prev,
-            { stream: "system", text: `Process exited with code ${msg.exitCode ?? "?"}` },
+            { stream: "system", text: `Process exited with code ${msg.data ?? "?"}` },
           ]);
           fetchExecution();
         }

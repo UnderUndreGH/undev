@@ -28,7 +28,7 @@ const createServerSchema = z
   .object({
     label: z.string().min(1),
     host: z.string().min(1),
-    port: z.number().int().default(22),
+    port: z.number().int().min(1).max(65535).default(22),
     sshUser: z.string().min(1),
     password: z.string().optional(),
     privateKey: z.string().optional(),

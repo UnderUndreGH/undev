@@ -61,7 +61,7 @@ const updateScriptSchema = z
 const executeScriptSchema = z
   .object({
     serverId: z.string().min(1),
-    params: z.record(z.string(), z.string()),
+    params: z.record(z.string().regex(/^[a-zA-Z_][a-zA-Z0-9_]*$/), z.string()),
   })
   .strict();
 
@@ -116,7 +116,7 @@ vpnScriptsRouter.get("/scripts", async (_req, res) => {
     params: paramsByScript.get(r.id) ?? [],
   }));
 
-  res.json({ scripts: groupByDirectory(enriched) });
+  res.json({ scripts: enriched });
 });
 
 // ── GET /scripts/:id — single script with content + params ───────────────────
@@ -180,44 +180,44 @@ vpnScriptsRouter.post("/scripts", async (req, res) => {
   }
 
   try {
-    const [script] = await db
-      .insert(scripts)
-      .values({
-        id,
-        path: body.path,
-        name: body.name,
-        description: body.description ?? null,
-        source: "database",
-        content: body.content,
-        contentHash: hash,
-        createdAt: now,
-        updatedAt: now,
-      })
-      .returning();
+    await db.transaction(async (tx) => {
+      const [script] = await tx
+        .insert(scripts)
+        .values({
+          id,
+          path: body.path,
+          name: body.name,
+          description: body.description ?? null,
+          source: "database",
+          content: body.content,
+          contentHash: hash,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .returning();
 
-    // Insert params if provided
-    if (body.params && body.params.length > 0) {
-      await db.insert(scriptParams).values(
-        body.params.map((p, i) => ({
-          id: randomUUID(),
-          scriptId: id,
-          name: p.name,
-          type: p.type,
-          defaultValue: p.defaultValue ?? null,
-          description: p.description ?? null,
-          options: p.options ?? null,
-          order: p.order ?? i,
-        })),
-      );
-    }
+      if (body.params && body.params.length > 0) {
+        await tx.insert(scriptParams).values(
+          body.params.map((p, i) => ({
+            id: randomUUID(),
+            scriptId: id,
+            name: p.name,
+            type: p.type,
+            defaultValue: p.defaultValue ?? null,
+            description: p.description ?? null,
+            options: p.options ?? null,
+            order: p.order ?? i,
+          })),
+        );
+      }
 
-    // Fetch with params
-    const paramsRows = await db
-      .select()
-      .from(scriptParams)
-      .where(eq(scriptParams.scriptId, id));
+      const paramsRows = await tx
+        .select()
+        .from(scriptParams)
+        .where(eq(scriptParams.scriptId, id));
 
-    res.status(201).json({ script: { ...script!, params: paramsRows } });
+      res.status(201).json({ script: { ...script!, params: paramsRows } });
+    });
   } catch (err) {
     logger.error({ ctx: "vpn-script-create", err }, "Failed to create script");
     res.status(500).json({
