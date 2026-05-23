@@ -4,7 +4,7 @@ import { api, ApiError } from "../../lib/api.js";
 
 export interface FieldDescriptor {
   name: string;
-  type: "string" | "number" | "boolean" | "enum";
+  type: "string" | "number" | "boolean" | "enum" | "array";
   required: boolean;
   default?: unknown;
   enumValues?: string[];
@@ -80,6 +80,16 @@ export function RunDialog({ entry, serverId, onClose }: Props): React.JSX.Elemen
         if (v === "" && !f.required) continue;
         if (f.type === "number" && typeof v === "string") {
           params[key] = Number(v);
+        } else if (f.type === "array" && typeof v === "string") {
+          if (v.trim() === "") {
+            params[key] = [];
+          } else {
+            params[key] = v.split(",").map((s) => {
+              const trimmed = s.trim();
+              const num = Number(trimmed);
+              return Number.isFinite(num) && trimmed !== "" ? num : trimmed;
+            });
+          }
         } else {
           params[key] = v;
         }

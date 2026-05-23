@@ -19,7 +19,7 @@ import { z } from "zod";
 
 export interface FieldDescriptor {
   name: string;
-  type: "string" | "number" | "boolean" | "enum";
+  type: "string" | "number" | "boolean" | "enum" | "array";
   required: boolean;
   default?: unknown;
   enumValues?: string[];
@@ -110,6 +110,7 @@ function mapType(inner: z.ZodTypeAny): {
   if (t === "string") return { type: "string" };
   if (t === "number") return { type: "number" };
   if (t === "boolean") return { type: "boolean" };
+  if (t === "array") return { type: "array" };
   if (t === "enum") {
     const values =
       def.values ??
