@@ -425,6 +425,20 @@ else
     exit 1
 fi
 
+# Feature 011 SECRET_* → compose env: the dashboard dispatches per-app env vars
+# as SECRET_<KEY> exports in the SSH preamble.  Docker Compose YAML interpolation
+# uses the bare key (e.g. ${POSTGRES_PASSWORD}), so we must strip the SECRET_
+# prefix and re-export into the current shell so `docker compose build/up` can
+# resolve them.  .env file values take precedence; this is a fallback for vars
+# only present in the dashboard's encrypted env-vars store.
+for _skey in ${!SECRET_@}; do
+    _bare_key="${_skey#SECRET_}"
+    if [[ -z "${!_bare_key+x}" ]]; then
+        export "$_bare_key"="${!_skey}"
+    fi
+done
+unset _skey _bare_key
+
 # ── 3. Pre-build cleanup ───────────────────────
 
 if [[ "$SKIP_CLEANUP" != "true" ]]; then
