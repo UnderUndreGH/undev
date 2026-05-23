@@ -293,7 +293,7 @@ send_telegram() {
             payload=$(printf '{"chat_id":"%s","text":"%s","parse_mode":"Markdown"}' \
                 "$chat_id" \
                 "$(echo "$message" | sed 's/"/\\"/g' | sed ':a;N;$!ba;s/\n/\\n/g')")
-            curl -s -f -X POST "https://api.telegram.org/bot${token}/sendMessage" \
+            curl -s -f --connect-timeout 5 --max-time 10 -X POST "https://api.telegram.org/bot${token}/sendMessage" \
                 -H "Content-Type: application/json; charset=utf-8" \
                 -d "$payload" > /dev/null 2>&1 || true
         fi
@@ -413,15 +413,22 @@ fi
 
 # ── 3. Check env file ──────────────────────────
 
-# Resolve which env file docker-compose will use
+# Resolve which env file docker-compose will use.
+# In monorepos (feature 009), the compose file may live in a subdirectory
+# (e.g. devops-app/docker-compose.yml) while APP_DIR is the repo root.
+# We must search for the .env file in the same directory as the compose file,
+# otherwise we might pick up a root-level deployment .env.production and force
+# docker-compose to ignore the actual app's .env file in the subdirectory.
+COMPOSE_DIR="$(dirname "$COMPOSE_FILE")"
+
 ENV_FLAG=""
-if [[ -f ".env" ]]; then
-    : # docker compose reads .env by default
-elif [[ -f ".env.production" ]]; then
-    ENV_FLAG="--env-file .env.production"
+if [[ -f "$COMPOSE_DIR/.env" ]]; then
+    : # docker compose reads .env in the compose directory by default
+elif [[ -f "$COMPOSE_DIR/.env.production" ]]; then
+    ENV_FLAG="--env-file $COMPOSE_DIR/.env.production"
 else
-    echo "❌ No .env or .env.production found in $APP_DIR!"
-    echo "   Create one: bash scripts/deploy/env-setup.sh .env --app-dir $APP_DIR"
+    echo "❌ No .env or .env.production found in $COMPOSE_DIR!"
+    echo "   Create one: bash scripts/deploy/env-setup.sh .env --app-dir $COMPOSE_DIR"
     exit 1
 fi
 
