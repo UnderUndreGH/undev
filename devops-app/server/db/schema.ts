@@ -49,6 +49,12 @@ export const servers = pgTable("servers", {
   aiReadAccess: boolean("ai_read_access").notNull().default(true),
   // 'enabled' | 'sandbox-only' | 'disabled'
   aiWriteAccess: text("ai_write_access").notNull().default("enabled"),
+  // ── Feature 016: VPN ──────────────────────────────────────────────────
+  vpnStatus: text("vpn_status").notNull().default("uninstalled"), // uninstalled | installing | installed | error
+  vpnDriftStatus: text("vpn_drift_status").notNull().default("unknown"), // in_sync | drifted | unknown
+  vpnInstalledAt: text("vpn_installed_at"),
+  vpnRemoveOnDelete: boolean("vpn_remove_on_delete").notNull().default(false),
+  scriptsEnabled: boolean("scripts_enabled").notNull().default(false),
 }, (t) => [
   index("idx_servers_status_setup_state").on(t.status, t.setupState),
 ]);
@@ -529,3 +535,27 @@ export const aiComposeReviewCache = pgTable("ai_compose_review_cache", {
 }, (t) => [
   sql`PRIMARY KEY (${t.appId}, ${t.contentSha256})`,
 ]);
+
+// ── Feature 016: Scripts library (FS + DB sourced) ──────────────────────
+export const scripts = pgTable("scripts", {
+  id: text("id").primaryKey(),
+  path: text("path").notNull().unique(),
+  name: text("name").notNull(),
+  description: text("description"),
+  source: text("source").notNull().default("filesystem"), // filesystem | database
+  content: text("content").notNull(),
+  contentHash: text("content_hash").notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
+export const scriptParams = pgTable("script_params", {
+  id: text("id").primaryKey(),
+  scriptId: text("script_id").notNull().references(() => scripts.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  type: text("type").notNull().default("string"),
+  defaultValue: text("default_value"),
+  description: text("description"),
+  options: jsonb("options").$type<string[] | null>(),
+  order: integer("order").notNull().default(0),
+});

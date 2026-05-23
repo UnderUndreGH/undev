@@ -56,6 +56,20 @@ import { initInterruptedDeploysCache } from "./services/interrupted-deploys-scan
 import { seedLocalServer } from "./lib/local-server-seed.js";
 import { selfProtection } from "./services/self-protection.js";
 
+// ── Feature 016: VPN routes (gated by FEATURE_VPN_ENABLED) ────────────────
+const vpnEnabled = process.env.FEATURE_VPN_ENABLED === "1";
+let vpnServersRouter: express.Router | null = null;
+let vpnScriptsRouter: express.Router | null = null;
+if (vpnEnabled) {
+  // Dynamic imports so VPN code is only loaded when feature flag is on.
+  const vpnServersMod = await import("./routes/servers-vpn.js");
+  vpnServersRouter = vpnServersMod.vpnServersRouter;
+  const vpnScriptsMod = await import("./routes/vpn-scripts.js");
+  vpnScriptsRouter = vpnScriptsMod.vpnScriptsRouter;
+} else {
+  console.log("[startup] FEATURE_VPN_ENABLED off — VPN routes disabled");
+}
+
 // ── Crash-shield (incident 2026-05-03) ──────────────────────────────────────
 // ssh2 emits 'error' on the underlying TCP Socket when a `forwardOut` channel
 // is refused by the target (e.g. caddy-reconciler tunnels to 127.0.0.1:2019
@@ -141,6 +155,14 @@ app.use("/api/ai/tool-calls", aiToolCallsRouter);
 app.use("/api/ai/compose-review", aiComposeReviewRouter);
 app.use("/api/ai/spend", aiSpendRouter);
 
+// ── Feature 016: VPN management routes (gated) ──────────────────────────
+if (vpnEnabled && vpnServersRouter) {
+  app.use("/api/vpn", vpnServersRouter);
+}
+if (vpnEnabled && vpnScriptsRouter) {
+  app.use("/api/vpn", vpnScriptsRouter);
+}
+
 // Serve static client build in production
 const clientDir = path.resolve(__dirname, "../client");
 app.use(express.static(clientDir));
@@ -188,6 +210,25 @@ async function startup() {
       "interrupted-deploys boot scan failed",
     );
   });
+
+  // ── Feature 016: VPN startup hooks (gated) ───────────────────────────
+  if (vpnEnabled) {
+    try {
+      const { indexScriptsDirectory } = await import("./services/script-indexer.js");
+      const scriptsRoot = process.env.VPN_SCRIPTS_ROOT || "./scripts";
+      const idxResult = await indexScriptsDirectory(scriptsRoot);
+      logger.info({ ctx: "vpn-script-indexer", ...idxResult }, "Script index built");
+    } catch (err) {
+      logger.warn({ ctx: "vpn-script-indexer", err }, "Script indexing failed (non-fatal)");
+    }
+    try {
+      const { startVpnDriftCron } = await import("./services/vpn-drift.js");
+      startVpnDriftCron();
+      logger.info("[startup] VPN drift cron started (5 min interval)");
+    } catch (err) {
+      logger.warn({ ctx: "vpn-drift-cron", err }, "VPN drift cron failed to start");
+    }
+  }
 
   // Step 1b: Deploy-lock pool-safety self-check (T015). If a transaction-mode
   // pooler sits between dashboard and Postgres, advisory locks cannot function.
@@ -263,6 +304,13 @@ async function startup() {
       stopPushDedupCleanup();
       stopChallengeCleanup();
       deployLock.stop();
+      // Feature 016: stop VPN drift cron on shutdown
+      if (vpnEnabled) {
+        try {
+          const { stopVpnDriftCron } = await import("./services/vpn-drift.js");
+          stopVpnDriftCron();
+        } catch { /* best effort */ }
+      }
       const ids = deployLock.heldServerIds();
       const releases = Promise.allSettled(
         ids.map((id) => deployLock.releaseLock(id)),
