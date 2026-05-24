@@ -224,7 +224,7 @@ vpnServersRouter.get("/servers", async (_req, res) => {
     })
     .from(servers);
 
-  res.json({ servers: rows });
+  res.json(rows ?? []);
 });
 
 // ── DELETE /servers/:id — hard-delete VPN server ─────────────────────────────
