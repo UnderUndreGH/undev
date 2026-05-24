@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { eq } from "drizzle-orm";
+import { eq, isNull } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { githubConnection, appSettings, servers } from "../db/schema.js";
 import { validateBody } from "../middleware/validate.js";
@@ -65,7 +65,7 @@ settingsRouter.post("/tls/test-caddy", async (req, res) => {
   const serverId = typeof req.query.serverId === "string" ? req.query.serverId : null;
   const targets = serverId
     ? await db.select().from(servers).where(eq(servers.id, serverId))
-    : await db.select().from(servers);
+    : await db.select().from(servers).where(isNull(servers.deletedAt));
 
   const results = await Promise.all(
     targets.map(async (srv) => {

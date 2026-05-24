@@ -3,7 +3,7 @@ import { api } from "../lib/api.js";
 
 export interface AiProviderKey {
   id: string;
-  provider: "anthropic" | "openai" | "ollama";
+  provider: "anthropic" | "openai" | "ollama" | "openai-compatible";
   modelDefault: string;
   endpointUrl: string | null;
   isActive: boolean;
@@ -17,7 +17,7 @@ export interface CreateProviderData {
   provider: string;
   modelDefault: string;
   endpointUrl?: string | null;
-  apiKey: string;
+  apiKey?: string;
   rateCardInputPerMtok?: number;
   rateCardOutputPerMtok?: number;
 }

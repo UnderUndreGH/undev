@@ -18,6 +18,12 @@ const cleanupSchema = z.object({
 dockerRouter.get("/servers/:serverId/docker", async (req, res) => {
   const serverId = req.params.serverId as string;
 
+  const [server] = await db.select({ id: servers.id, deletedAt: servers.deletedAt }).from(servers).where(eq(servers.id, serverId)).limit(1);
+  if (!server || server.deletedAt) {
+    res.status(404).json({ error: { code: "NOT_FOUND", message: "Server not found" } });
+    return;
+  }
+
   if (!sshPool.isConnected(serverId)) {
     res.status(503).json({ error: { code: "NOT_CONNECTED", message: "Server not connected" } });
     return;
@@ -75,7 +81,7 @@ dockerRouter.post(
       .where(eq(servers.id, serverId))
       .limit(1);
 
-    if (!server) {
+    if (!server || server.deletedAt) {
       res.status(404).json({ error: { code: "NOT_FOUND", message: "Server not found" } });
       return;
     }
@@ -117,7 +123,7 @@ dockerRouter.post("/servers/:serverId/docker/containers/:containerId/stop", asyn
   }
 
   const [server] = await db.select().from(servers).where(eq(servers.id, serverId)).limit(1);
-  if (!server) {
+  if (!server || server.deletedAt) {
     res.status(404).json({ error: { code: "NOT_FOUND", message: "Server not found" } });
     return;
   }
@@ -144,7 +150,7 @@ dockerRouter.post("/servers/:serverId/docker/containers/:containerId/kill", asyn
   }
 
   const [server] = await db.select().from(servers).where(eq(servers.id, serverId)).limit(1);
-  if (!server) {
+  if (!server || server.deletedAt) {
     res.status(404).json({ error: { code: "NOT_FOUND", message: "Server not found" } });
     return;
   }
@@ -171,7 +177,7 @@ dockerRouter.delete("/servers/:serverId/docker/containers/:containerId", async (
   }
 
   const [server] = await db.select().from(servers).where(eq(servers.id, serverId)).limit(1);
-  if (!server) {
+  if (!server || server.deletedAt) {
     res.status(404).json({ error: { code: "NOT_FOUND", message: "Server not found" } });
     return;
   }

@@ -11,14 +11,16 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { mkdir, writeFile, appendFile } from "node:fs/promises";
+import { mkdir, appendFile } from "node:fs/promises";
 import { join } from "node:path";
 import { EventEmitter } from "events";
+import { spawn } from "node:child_process";
 import { db } from "../db/index.js";
 import { scriptRuns, scripts } from "../db/schema.js";
 import { eq } from "drizzle-orm";
 import { runRemoteCommand } from "./vpn-ssh.js";
 import { logger } from "../lib/logger.js";
+import type { ScriptExecutionResult } from "../lib/script-types.js";
 
 // ── Pub/Sub bus for real-time execution events ─────────────────────────
 export const executionBus = new EventEmitter();
@@ -211,4 +213,125 @@ async function runExecution(
  */
 function shellEscape(value: string): string {
   return `'${value.replace(/'/g, "'\\''")}'`;
+}
+
+let sandboxAvailable: boolean | null = null;
+
+export async function checkSandboxAvailability(): Promise<boolean> {
+  try {
+    const result = await new Promise<{ exitCode: number }>((resolve, reject) => {
+      const proc = spawn("bash", ["-c", "echo sandbox-ok"], {
+        timeout: 5000,
+        env: { PATH: process.env.PATH ?? "/usr/bin:/bin" },
+      });
+      let exited = false;
+      proc.on("exit", (code) => {
+        exited = true;
+        resolve({ exitCode: code ?? 1 });
+      });
+      proc.on("error", (err) => {
+        if (!exited) reject(err);
+      });
+      setTimeout(() => {
+        if (!exited) {
+          proc.kill("SIGKILL");
+          reject(new Error("Sandbox check timed out"));
+        }
+      }, 5000);
+    });
+
+    sandboxAvailable = result.exitCode === 0;
+    logger.info(
+      { ctx: "script-executor", sandboxAvailable },
+      "Sandbox availability check complete",
+    );
+    return sandboxAvailable;
+  } catch (err) {
+    sandboxAvailable = false;
+    logger.error(
+      { ctx: "script-executor", err },
+      "Sandbox availability check FAILED — script execution will be blocked",
+    );
+    return false;
+  }
+}
+
+export function isSandboxAvailable(): boolean | null {
+  return sandboxAvailable;
+}
+
+export async function executeSandboxed(
+  scriptContent: string,
+  params: Record<string, string>,
+  opts?: { timeoutMs?: number },
+): Promise<ScriptExecutionResult> {
+  if (sandboxAvailable === false) {
+    throw new Error("Sandbox not available — script execution blocked (fail-closed)");
+  }
+
+  const start = Date.now();
+  const timeoutMs = opts?.timeoutMs ?? 10 * 60_000;
+
+  const paramEnv: Record<string, string> = {};
+  for (const [k, v] of Object.entries(params)) {
+    paramEnv[`PARAM_${k}`] = v;
+  }
+
+  const result = await new Promise<ScriptExecutionResult>((resolve, reject) => {
+    const proc = spawn("bash", ["-c", scriptContent], {
+      timeout: timeoutMs,
+      env: {
+        ...paramEnv,
+        PATH: "/usr/local/bin:/usr/bin:/bin",
+        HOME: "/tmp",
+        LANG: "C.UTF-8",
+      },
+      cwd: "/tmp",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+
+    let stdout = "";
+    let stderr = "";
+
+    proc.stdout?.on("data", (chunk: Buffer) => {
+      stdout += chunk.toString();
+    });
+
+    proc.stderr?.on("data", (chunk: Buffer) => {
+      stderr += chunk.toString();
+    });
+
+    proc.on("exit", (code) => {
+      resolve({
+        exitCode: code ?? 1,
+        stdout,
+        stderr,
+        sandboxed: true,
+        durationMs: Date.now() - start,
+      });
+    });
+
+    proc.on("error", (err) => {
+      resolve({
+        exitCode: -1,
+        stdout,
+        stderr: err.message,
+        sandboxed: false,
+        durationMs: Date.now() - start,
+      });
+    });
+
+    setTimeout(() => {
+      proc.kill("SIGKILL");
+      resolve({
+        exitCode: -1,
+        stdout,
+        stderr: "Execution timed out",
+        sandboxed: true,
+        durationMs: timeoutMs,
+      });
+    }, timeoutMs);
+  });
+
+  return result;
 }

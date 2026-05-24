@@ -17,6 +17,10 @@ export function ProviderConfigForm({ onClose }: Props) {
     rateCardOutputPerMtok: "15.0",
   });
 
+  const showEndpointUrl = form.provider === "openai-compatible" || form.provider === "ollama" || form.provider === "openai" || form.provider === "anthropic";
+  const endpointRequired = form.provider === "openai-compatible" || form.provider === "ollama";
+  const apiKeyRequired = form.provider !== "openai-compatible";
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     createProvider.mutate({
@@ -45,6 +49,7 @@ export function ProviderConfigForm({ onClose }: Props) {
               <option value="anthropic">Anthropic (Claude)</option>
               <option value="openai">OpenAI (GPT)</option>
               <option value="ollama">Ollama (Local)</option>
+              <option value="openai-compatible">OpenAI-Compatible</option>
             </select>
           </div>
 
@@ -60,15 +65,24 @@ export function ProviderConfigForm({ onClose }: Props) {
             />
           </div>
 
-          {form.provider === "ollama" && (
+          {showEndpointUrl && (
             <div>
-              <label className="block text-xs text-gray-500 uppercase font-bold mb-1.5">Endpoint URL</label>
+              <label className="block text-xs text-gray-500 uppercase font-bold mb-1.5">
+                {form.provider === "openai-compatible" ? "Base URL" : "Endpoint URL"}
+              </label>
               <input
                 type="url"
                 value={form.endpointUrl}
                 onChange={(e) => setForm({ ...form, endpointUrl: e.target.value })}
-                placeholder="http://localhost:11434/v1"
+                placeholder={
+                  form.provider === "openai-compatible"
+                    ? "https://api.your-provider.com/v1"
+                    : form.provider === "ollama"
+                      ? "http://localhost:11434/v1"
+                      : "https://api.openai.com/v1"
+                }
                 className="w-full bg-gray-950 border border-gray-700 rounded-md px-3 py-2 text-sm focus:border-brand-purple outline-none"
+                required={endpointRequired}
               />
             </div>
           )}
@@ -79,8 +93,9 @@ export function ProviderConfigForm({ onClose }: Props) {
               type="password"
               value={form.apiKey}
               onChange={(e) => setForm({ ...form, apiKey: e.target.value })}
+              placeholder={apiKeyRequired ? undefined : "Optional — leave blank if no auth needed"}
               className="w-full bg-gray-950 border border-gray-700 rounded-md px-3 py-2 text-sm focus:border-brand-purple outline-none"
-              required
+              required={apiKeyRequired}
             />
           </div>
 

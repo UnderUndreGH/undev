@@ -54,9 +54,14 @@ export const servers = pgTable("servers", {
   vpnDriftStatus: text("vpn_drift_status").notNull().default("unknown"), // in_sync | drifted | unknown
   vpnInstalledAt: text("vpn_installed_at"),
   vpnRemoveOnDelete: boolean("vpn_remove_on_delete").notNull().default(false),
+  vpnConfigEncrypted: text("vpn_config_encrypted"),
+  vpnConfigFormat: text("vpn_config_format"),
   scriptsEnabled: boolean("scripts_enabled").notNull().default(false),
+  kind: text("kind").notNull().default("general"),
+  deletedAt: text("deletedAt"),
 }, (t) => [
   index("idx_servers_status_setup_state").on(t.status, t.setupState),
+  index("idx_servers_deleted_at").on(t.deletedAt),
 ]);
 
 // ── Application ─────────────────────────────────────────────────────────────
@@ -442,7 +447,7 @@ export const aiProviderKeys = pgTable("ai_provider_keys", {
   provider: text("provider").notNull(), // anthropic | openai | ollama
   modelDefault: text("model_default").notNull(),
   endpointUrl: text("endpoint_url"),
-  apiKeyEncrypted: text("api_key_encrypted").notNull(),
+  apiKeyEncrypted: text("api_key_encrypted"),
   isActive: boolean("is_active").notNull().default(true),
   rateCardInputPerMtok: real("rate_card_input_per_mtok"),
   rateCardOutputPerMtok: real("rate_card_output_per_mtok"),
@@ -559,3 +564,62 @@ export const scriptParams = pgTable("script_params", {
   options: jsonb("options").$type<string[] | null>(),
   order: integer("order").notNull().default(0),
 });
+
+// ── Feature 022: Script System Unification ──────────────────────────────
+export const ScriptSource = {
+  UPLOAD: "upload",
+  FEATURE_005: "feature-005",
+  FEATURE_016: "feature-016",
+} as const;
+
+export type ScriptSourceValue = (typeof ScriptSource)[keyof typeof ScriptSource];
+
+export const unifiedScripts = pgTable("unified_scripts", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull().unique(),
+  description: text("description"),
+  contentHash: text("content_hash").notNull(),
+  filePath: text("file_path").notNull(),
+  parameterSchema: jsonb("parameter_schema").$type<Record<string, unknown> | null>(),
+  source: text("source").notNull().default("upload"),
+  createdBy: text("created_by"),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+}, (t) => [
+  index("idx_unified_scripts_name").on(t.name),
+  index("idx_unified_scripts_source").on(t.source),
+]);
+
+export const AuditAction = {
+  UPLOAD: "upload",
+  UPDATE: "update",
+  DELETE: "delete",
+  EXECUTE: "execute",
+  INTEGRITY_FAILURE: "integrity-failure",
+  SCANNER_WARN: "scanner-warn",
+} as const;
+
+export type AuditActionValue = (typeof AuditAction)[keyof typeof AuditAction];
+
+export const ActorRole = {
+  ADMIN: "admin",
+  USER: "user",
+  SYSTEM: "system",
+} as const;
+
+export type ActorRoleValue = (typeof ActorRole)[keyof typeof ActorRole];
+
+export const unifiedScriptAuditEntries = pgTable("unified_script_audit_entries", {
+  id: text("id").primaryKey(),
+  actorId: text("actor_id").notNull(),
+  actorRole: text("actor_role").notNull(),
+  action: text("action").notNull(),
+  scriptId: text("script_id").references(() => unifiedScripts.id, { onDelete: "set null" }),
+  scriptName: text("script_name"),
+  metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+  createdAt: text("created_at").notNull(),
+}, (t) => [
+  index("idx_unified_script_audit_script_id").on(t.scriptId),
+  index("idx_unified_script_audit_action").on(t.action),
+  index("idx_unified_script_audit_created_at").on(t.createdAt),
+]);

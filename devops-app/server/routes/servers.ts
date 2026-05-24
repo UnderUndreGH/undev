@@ -1,14 +1,44 @@
+/**
+ * VERIFICATION CHECKLIST (Feature 021 — T015, T016, T019):
+ *
+ * T015: Verify unified endpoint:
+ *   - GET /api/servers → returns all servers (general + vpn)
+ *   - GET /api/servers?kind=vpn → returns VPN servers only
+ *   - GET /api/servers?kind=general → returns general servers only
+ *
+ * T016: Verify old VPN route behavior:
+ *   - GET /api/vpn/servers still responds (deprecated, not deleted)
+ *   - Response includes Deprecation: true header
+ *
+ * T019: Verify kind filter validation:
+ *   - GET /api/servers?kind=invalid → returns 400 or falls back to all
+ *   - GET /api/servers?kind= (empty) → falls back to all
+ */
+
 import { Router } from "express";
 import { z } from "zod";
 import { randomUUID } from "node:crypto";
 import { db } from "../db/index.js";
 import { servers } from "../db/schema.js";
-import { eq } from "drizzle-orm";
+import { eq, isNull } from "drizzle-orm";
 import { validateBody } from "../middleware/validate.js";
+import { parseKindFilter, isUnifiedApiEnabled, type ServerKind, ALL_SERVER_KINDS } from "../lib/server-types.js";
 import { sshPool } from "../services/ssh-pool.js";
 import { serializeServer, serializeServers } from "../lib/serializer.js";
 import { scriptRunner } from "../services/ssh-executor.js";
 import { isLocalServer } from "../lib/constants.js";
+import {
+  softDeleteServer,
+  restoreServer,
+  getArchivedServers,
+  ServerNotFoundError,
+  ServerAlreadyDeletedError,
+  ServerNotDeletedError,
+  ConfirmNameMismatchError,
+  ActiveDeploymentsError,
+} from "../services/server-deletion.js";
+import { finalizeDeletedServers } from "../workers/server-finalizer.js";
+import { createAuditEntry } from "../lib/audit.js";
 
 export const serversRouter = Router();
 
@@ -63,9 +93,24 @@ function applyDefaultScanRoots(body: {
 }
 
 // GET /api/servers
-serversRouter.get("/", async (_req, res) => {
-  const result = await db.select().from(servers);
-  res.json(serializeServers(result));
+serversRouter.get("/", async (req, res) => {
+  const kinds = isUnifiedApiEnabled()
+    ? parseKindFilter(req.query.kind)
+    : ALL_SERVER_KINDS;
+
+  const result = await db
+    .select()
+    .from(servers)
+    .where(isNull(servers.deletedAt));
+
+  const filtered = isUnifiedApiEnabled() && kinds.length < ALL_SERVER_KINDS.length
+    ? result.filter((row) => {
+        const kind = (row as Record<string, unknown>).kind as string | undefined;
+        return kinds.includes((kind ?? "general") as ServerKind);
+      })
+    : result;
+
+  res.json(serializeServers(filtered));
 });
 
 // POST /api/servers
@@ -91,7 +136,7 @@ serversRouter.get("/:id", async (req, res) => {
     .where(eq(servers.id, id))
     .limit(1);
 
-  if (!server) {
+  if (!server || server.deletedAt) {
     res.status(404).json({ error: { code: "NOT_FOUND", message: "Server not found" } });
     return;
   }
@@ -115,24 +160,68 @@ serversRouter.put("/:id", validateBody(updateServerSchema), async (req, res) => 
 });
 
 // DELETE /api/servers/:id
-serversRouter.delete("/:id", async (req, res) => {
+const deleteServerSchema = z.object({
+  confirmName: z.string().min(1),
+});
+
+serversRouter.delete("/:id", validateBody(deleteServerSchema), async (req, res) => {
   const id = req.params.id as string;
   if (isLocalServer(id)) {
     res.status(403).json({ error: { code: "FORBIDDEN", message: "Cannot delete the local server entry" } });
     return;
   }
-  sshPool.disconnect(id);
 
-  const [deleted] = await db
-    .delete(servers)
-    .where(eq(servers.id, id))
-    .returning({ id: servers.id });
+  const userId = (req as typeof req & { userId?: string }).userId ?? "unknown";
 
-  if (!deleted) {
-    res.status(404).json({ error: { code: "NOT_FOUND", message: "Server not found" } });
-    return;
+  try {
+    await softDeleteServer(id, req.body.confirmName, userId);
+    res.status(204).end();
+  } catch (err) {
+    if (err instanceof ServerNotFoundError) {
+      res.status(404).json({ error: { code: "NOT_FOUND", message: "Server not found" } });
+      return;
+    }
+    if (err instanceof ServerAlreadyDeletedError) {
+      res.status(409).json({ error: { code: "ALREADY_DELETED", message: "Server is already soft-deleted" } });
+      return;
+    }
+    if (err instanceof ConfirmNameMismatchError) {
+      res.status(400).json({ error: { code: "CONFIRM_NAME_MISMATCH", message: "Confirmation name does not match server label" } });
+      return;
+    }
+    if (err instanceof ActiveDeploymentsError) {
+      res.status(409).json({ error: { code: "HAS_ACTIVE_APPS", message: err.message, details: { count: err.count } } });
+      return;
+    }
+    throw err;
   }
-  res.status(204).end();
+});
+
+// POST /api/servers/:id/restore
+serversRouter.post("/:id/restore", async (req, res) => {
+  const id = req.params.id as string;
+  const userId = (req as typeof req & { userId?: string }).userId ?? "unknown";
+
+  try {
+    await restoreServer(id, userId);
+    res.json({ ok: true });
+  } catch (err) {
+    if (err instanceof ServerNotFoundError) {
+      res.status(404).json({ error: { code: "NOT_FOUND", message: "Server not found" } });
+      return;
+    }
+    if (err instanceof ServerNotDeletedError) {
+      res.status(400).json({ error: { code: "NOT_ARCHIVED", message: "Server is not in archived state" } });
+      return;
+    }
+    throw err;
+  }
+});
+
+// GET /api/servers/archived
+serversRouter.get("/archived", async (_req, res) => {
+  const archived = await getArchivedServers();
+  res.json(archived);
 });
 
 // POST /api/servers/:id/verify
@@ -148,7 +237,7 @@ serversRouter.post("/:id/verify", async (req, res) => {
     .where(eq(servers.id, id))
     .limit(1);
 
-  if (!server) {
+  if (!server || server.deletedAt) {
     res.status(404).json({ error: { code: "NOT_FOUND", message: "Server not found" } });
     return;
   }
@@ -206,7 +295,7 @@ serversRouter.post("/:id/setup", validateBody(setupSchema), async (req, res) => 
     .where(eq(servers.id, id))
     .limit(1);
 
-  if (!server) {
+  if (!server || server.deletedAt) {
     res.status(404).json({ error: { code: "NOT_FOUND", message: "Server not found" } });
     return;
   }
@@ -412,11 +501,11 @@ serversRouter.post(
       return;
     }
     const [server] = await db
-      .select({ id: servers.id })
+      .select({ id: servers.id, deletedAt: servers.deletedAt })
       .from(servers)
       .where(eq(servers.id, id))
       .limit(1);
-    if (!server) {
+    if (!server || server.deletedAt) {
       res.status(404).json({
         error: { code: "NOT_FOUND", message: "Server not found" },
       });
@@ -475,7 +564,7 @@ serversRouter.post(
       .from(servers)
       .where(eq(servers.id, id))
       .limit(1);
-    if (!server) {
+    if (!server || server.deletedAt) {
       res.status(404).json({
         error: { code: "NOT_FOUND", message: "Server not found" },
       });
@@ -650,3 +739,28 @@ serversRouter.post(
     }
   },
 );
+
+// POST /api/admin/finalize-deleted
+serversRouter.post("/admin/finalize-deleted", async (req, res) => {
+  const userId = (req as typeof req & { userId?: string }).userId ?? "unknown";
+
+  try {
+    const result = await finalizeDeletedServers();
+
+    if (result.finalized > 0) {
+      await createAuditEntry({
+        actorId: userId,
+        action: "admin.finalize_deleted",
+        resourceType: "system",
+        resourceId: "batch",
+        metadata: { count: result.finalized, servers: result.servers.map((s) => s.id) },
+      });
+    }
+
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({
+      error: { code: "FINALIZE_ERROR", message: "Failed to finalize deleted servers" },
+    });
+  }
+});

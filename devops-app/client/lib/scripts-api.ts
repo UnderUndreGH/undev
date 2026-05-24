@@ -1,4 +1,4 @@
-/** Feature 016 T018 — typed REST client for script management & execution. */
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "./api.js";
 
 export interface Script {
@@ -6,9 +6,10 @@ export interface Script {
   path: string;
   name: string;
   description: string | null;
-  source: "filesystem" | "database";
+  source: "filesystem" | "database" | "upload" | "feature-005" | "feature-016";
   content: string | null;
   contentHash: string | null;
+  parameterSchema: Record<string, unknown> | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -44,6 +45,29 @@ export interface ReindexResult {
   added: number;
   updated: number;
   removed: number;
+}
+
+export interface ScannerViolation {
+  pattern: string;
+  line: number;
+  description: string;
+}
+
+export interface UploadResult {
+  id: number;
+  name: string;
+  contentHash: string;
+  parameterSchema: Record<string, unknown> | null;
+  source: string;
+  warnings?: ScannerViolation[];
+}
+
+export interface ExecutionResult {
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+  sandboxed: boolean;
+  durationMs: number;
 }
 
 export const scriptsApi = {
@@ -85,4 +109,121 @@ export const scriptsApi = {
 
   reindex: (): Promise<ReindexResult> =>
     api.post<ReindexResult>("/scripts/reindex"),
+
+  upload: async (data: {
+    file: File;
+    name: string;
+    description?: string;
+  }): Promise<UploadResult> => {
+    const form = new FormData();
+    form.append("file", data.file);
+    form.append("name", data.name);
+    if (data.description) form.append("description", data.description);
+
+    const res = await fetch("/api/scripts/upload", {
+      method: "POST",
+      credentials: "same-origin",
+      body: form,
+    });
+
+    const body = await res.json();
+    if (!res.ok) {
+      throw { status: res.status, ...body };
+    }
+    return body as UploadResult;
+  },
+
+  uploadUpdate: async (
+    id: number,
+    data: {
+      file?: File;
+      name?: string;
+      description?: string;
+    },
+  ): Promise<Script> => {
+    const form = new FormData();
+    if (data.file) form.append("file", data.file);
+    if (data.name) form.append("name", data.name);
+    if (data.description) form.append("description", data.description);
+
+    const res = await fetch(`/api/scripts/${id}`, {
+      method: "PUT",
+      credentials: "same-origin",
+      body: form,
+    });
+
+    const body = await res.json();
+    if (!res.ok) {
+      throw { status: res.status, ...body };
+    }
+    return body as Script;
+  },
+
+  executeScript: (
+    id: string | number,
+    payload: { serverId: number; parameters: Record<string, unknown> },
+  ): Promise<ExecutionResult> =>
+    api.post<ExecutionResult>(`/scripts/${id}/execute`, payload),
 };
+
+export function useScripts() {
+  return useQuery({
+    queryKey: ["scripts"],
+    queryFn: () => scriptsApi.list(),
+  });
+}
+
+export function useScript(id: string | null) {
+  return useQuery({
+    queryKey: ["scripts", id],
+    queryFn: () => scriptsApi.get(id!),
+    enabled: id !== null,
+  });
+}
+
+export function useUploadScript() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: scriptsApi.upload,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["scripts"] });
+    },
+  });
+}
+
+export function useUpdateScript() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      ...data
+    }: { id: number } & Parameters<typeof scriptsApi.uploadUpdate>[1]) =>
+      scriptsApi.uploadUpdate(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["scripts"] });
+    },
+  });
+}
+
+export function useDeleteScript() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string | number) => api.delete(`/scripts/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["scripts"] });
+    },
+  });
+}
+
+export function useExecuteScript() {
+  return useMutation({
+    mutationFn: ({
+      id,
+      ...payload
+    }: {
+      id: string | number;
+      serverId: number;
+      parameters: Record<string, unknown>;
+    }) => scriptsApi.executeScript(id, payload),
+  });
+}

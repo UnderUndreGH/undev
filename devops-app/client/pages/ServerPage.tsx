@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../lib/api.js";
 import { HealthPanel } from "../components/health/HealthPanel.js";
@@ -24,6 +24,8 @@ import { MigrateExistingAppWizard } from "../components/apps/MigrateExistingAppW
 import { AnalyzeButton } from "../components/ai/AnalyzeButton.js";
 import { AiBadge } from "../components/ai/AiBadge.js";
 import { AiServerPolicySection } from "../components/ai/AiServerPolicySection.js";
+import { DeleteConfirmModal } from "../components/servers/DeleteConfirmModal.js";
+import { useDeleteServer } from "../hooks/useServerActions.js";
 import type {
   GitCandidate,
   DockerCandidate,
@@ -94,6 +96,7 @@ const DEFAULT_ADD_STATE: AddFormState = {
 
 export function ServerPage() {
   const { serverId } = useParams<{ serverId: string }>();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<Tab>("Apps");
   const [isAddOpen, setIsAddOpen] = useState(false);
@@ -102,6 +105,7 @@ export function ServerPage() {
   const [addState, setAddState] = useState<AddFormState>(DEFAULT_ADD_STATE);
   const [isScanOpen, setIsScanOpen] = useState(false);
   const [showInitialise, setShowInitialise] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [selectedAppIds, setSelectedAppIds] = useState<Set<string>>(
     () => new Set<string>(),
   );
@@ -111,6 +115,8 @@ export function ServerPage() {
     queryFn: () => api.get<Server>(`/servers/${serverId}`),
     enabled: Boolean(serverId),
   });
+
+  const deleteServer = useDeleteServer();
 
   const { data: apps, isLoading: appsLoading } = useQuery({
     queryKey: ["server", serverId, "apps"],
@@ -297,6 +303,16 @@ export function ServerPage() {
           {server.connectionType === "local" && <LocalBadge />}
           <AiBadge targetKind="server" targetId={server.id} />
           <AnalyzeButton targetKind="server" targetId={server.id} variant="secondary" />
+          <div className="flex-1" />
+          {server.connectionType !== "local" && (
+            <button
+              type="button"
+              onClick={() => setShowDeleteModal(true)}
+              className="border border-red-800 hover:border-red-600 hover:bg-red-950/40 px-3 py-1 rounded text-xs font-medium transition-colors text-red-400"
+            >
+              Delete Server
+            </button>
+          )}
         </div>
         <p className="text-sm text-gray-400 mt-1">
           {server.connectionType === "local" ? "Local Server" : `${server.host}:${server.port} · ${server.sshUser}`}
@@ -424,6 +440,30 @@ export function ServerPage() {
             setIsMigrateOpen(false);
             queryClient.invalidateQueries({ queryKey: ["server", serverId, "apps"] });
           }}
+        />
+      )}
+      {showDeleteModal && server && (
+        <DeleteConfirmModal
+          serverLabel={server.label}
+          serverId={server.id}
+          onConfirm={() => {
+            deleteServer.mutate(
+              { serverId: server.id, confirmName: server.label },
+              {
+                onSuccess: () => {
+                  setShowDeleteModal(false);
+                  navigate("/");
+                },
+              },
+            );
+          }}
+          onCancel={() => setShowDeleteModal(false)}
+          isDeleting={deleteServer.isPending}
+          error={
+            deleteServer.isError
+              ? (deleteServer.error as Error)?.message ?? "Delete failed"
+              : null
+          }
         />
       )}
     </div>

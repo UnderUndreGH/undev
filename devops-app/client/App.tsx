@@ -13,8 +13,10 @@ import { RunsPage } from "./pages/RunsPage.js";
 import { IncidentPage } from "./pages/IncidentPage.js";
 import { IncidentsListPage } from "./pages/IncidentsListPage.js";
 import { VpnPage } from "./pages/VpnPage.js";
+import { ScriptsPage } from "./pages/ScriptsPage.js";
 import { RunDetail } from "./components/scripts/RunDetail.js";
 import { Layout } from "./components/layout/Layout.js";
+import { ArchivedServersPage } from "./pages/ArchivedServersPage.js";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -33,6 +35,7 @@ export function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route element={<Layout />}>
             <Route path="/" element={<DashboardPage />} />
+            <Route path="/servers/archived" element={<ArchivedServersPage />} />
             <Route path="/servers/:serverId" element={<ServerPage />} />
             <Route path="/apps/:appId" element={<AppPage />} />
             <Route path="/apps/:appId/edit" element={<EditAppPage />} />
@@ -43,6 +46,7 @@ export function App() {
             <Route path="/incidents" element={<IncidentsListPage />} />
             <Route path="/incidents/:id" element={<IncidentPage />} />
             <Route path="/vpn" element={<VpnPage />} />
+            <Route path="/scripts" element={<ScriptsPage />} />
             <Route path="/settings" element={<SettingsPage />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />

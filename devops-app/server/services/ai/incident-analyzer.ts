@@ -100,7 +100,7 @@ export async function runIncidentAnalysis(conversationId: string) {
     throw AppError.notFound(`Provider key ${conversation.providerKeyId} not found`);
   }
 
-  const model = resolveModel(providerKey);
+  const model = await resolveModel(providerKey);
   const systemPrompt = await resolveSystemPrompt(conversationId);
   const contextDocument = await aggregateContext(
     conversation.targetKind,
@@ -311,7 +311,7 @@ export async function resumeConversationWithToolResult(
     .limit(1);
   if (!providerKey) throw AppError.notFound(`Provider key ${conversation.providerKeyId} not found`);
 
-  const model = resolveModel(providerKey);
+  const model = await resolveModel(providerKey);
   const systemPrompt = await resolveSystemPrompt(conversationId);
 
   // Load full message history

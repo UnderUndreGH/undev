@@ -60,6 +60,12 @@ export function Layout() {
             Servers
           </Link>
           <Link
+            to="/servers/archived"
+            className="block px-3 py-2 rounded-lg text-gray-500 hover:bg-gray-800 hover:text-gray-300 text-sm"
+          >
+            Archived Servers
+          </Link>
+          <Link
             to="/runs"
             className="block px-3 py-2 rounded-lg text-gray-300 hover:bg-gray-800 hover:text-white"
           >
@@ -82,6 +88,12 @@ export function Layout() {
             className="block px-3 py-2 rounded-lg text-gray-300 hover:bg-gray-800 hover:text-white"
           >
             VPN
+          </Link>
+          <Link
+            to="/scripts"
+            className="block px-3 py-2 rounded-lg text-gray-300 hover:bg-gray-800 hover:text-white"
+          >
+            Scripts
           </Link>
           <Link
             to="/settings"

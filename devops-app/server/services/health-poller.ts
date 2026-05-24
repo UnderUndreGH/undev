@@ -48,8 +48,8 @@ class HealthPoller {
     // unconnected server would silently return null here, leaving status
     // stuck on "unknown" — /health/refresh surfaced that as POLL_FAILED.
     if (!sshPool.isConnected(serverId)) {
-      const [row] = await db.select().from(servers).where(eq(servers.id, serverId));
-      if (!row) return null;
+        const [row] = await db.select().from(servers).where(eq(servers.id, serverId));
+        if (!row || row.deletedAt) return null;
       try {
         if (row.connectionType === "local") {
           await sshPool.connect({

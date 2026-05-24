@@ -5,6 +5,9 @@ import { api } from "../lib/api.js";
 import { InterruptedDeploysPanel } from "../components/apps/InterruptedDeploysPanel.js";
 import { AnalyzeButton } from "../components/ai/AnalyzeButton.js";
 import { LocalBadge } from "../components/servers/LocalBadge.js";
+import { DeleteConfirmModal } from "../components/servers/DeleteConfirmModal.js";
+import { useDeleteServer } from "../hooks/useServerActions.js";
+import type { KindFilter } from "../lib/servers-api.js";
 
 interface Server {
   id: string;
@@ -16,6 +19,8 @@ interface Server {
   sshAuthMethod: "key" | "password";
   lastHealthCheck: string | null;
   connectionType?: "local" | "ssh" | null;
+  kind?: string;
+  vpnStatus?: string | null;
 }
 
 interface AddServerPayload {
@@ -57,11 +62,21 @@ export function DashboardPage() {
   const [verifyStatus, setVerifyStatus] = useState<"idle" | "verifying" | "success" | "failed">("idle");
   const [verifyError, setVerifyError] = useState<string | null>(null);
   const [createdServerId, setCreatedServerId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Server | null>(null);
+
+  const deleteServer = useDeleteServer();
+  const [kindFilter, setKindFilter] = useState<KindFilter["kind"]>("all");
 
   const { data, isLoading } = useQuery({
     queryKey: ["servers"],
     queryFn: () => api.get<Server[]>("/servers"),
   });
+
+  const filteredData = React.useMemo(() => {
+    if (!data) return data;
+    if (kindFilter === "all") return data;
+    return data.filter((s) => (s.kind ?? "general") === kindFilter);
+  }, [data, kindFilter]);
 
   const addMutation = useMutation({
     mutationFn: (payload: AddServerPayload) =>
@@ -112,7 +127,18 @@ export function DashboardPage() {
       {/* Feature 012 T051: surface interrupted blue/green deploys at top. */}
       <InterruptedDeploysPanel />
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold">Servers</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-bold">Servers</h1>
+          <select
+            value={kindFilter}
+            onChange={(e) => setKindFilter(e.target.value as KindFilter["kind"])}
+            className="bg-gray-950 border border-gray-700 rounded px-2 py-1 text-sm"
+          >
+            <option value="all">All</option>
+            <option value="general">General</option>
+            <option value="vpn">VPN</option>
+          </select>
+        </div>
         <button
           onClick={openDialog}
           className="bg-brand-purple hover:bg-purple-600 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
@@ -127,13 +153,13 @@ export function DashboardPage() {
             <div key={n} className="bg-gray-900 border border-gray-800 rounded-lg p-4 animate-pulse h-24" />
           ))}
         </div>
-      ) : !data?.length ? (
+      ) : !filteredData?.length ? (
         <div className="text-gray-500 text-center py-12">
-          No servers configured. Click "Add Server" to get started.
+          {kindFilter !== "all" ? `No ${kindFilter} servers found.` : "No servers configured. Click \"Add Server\" to get started."}
         </div>
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {data.map((server) => (
+          {filteredData.map((server) => (
             <Link
               key={server.id}
               to={`/servers/${server.id}`}
@@ -143,6 +169,11 @@ export function DashboardPage() {
                 <h3 className="font-semibold group-hover:text-blue-400 transition-colors flex items-center gap-2">
                   {server.label}
                   {server.connectionType === "local" && <LocalBadge />}
+                  {server.kind && server.kind !== "general" && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-900/40 text-purple-400 border border-purple-700">
+                      {server.kind}
+                    </span>
+                  )}
                 </h3>
                 <StatusBadge status={server.status} />
               </div>
@@ -150,9 +181,20 @@ export function DashboardPage() {
                 <p className="text-sm text-gray-400">
                   {server.connectionType === "local" ? "Local Server" : `${server.host}:${server.port}`}
                 </p>
-                {server.status === 'offline' && (
-                  <AnalyzeButton targetKind="server" targetId={server.id} variant="ghost" className="!p-1" />
-                )}
+                <div className="flex items-center gap-2">
+                  {server.status === 'offline' && (
+                    <AnalyzeButton targetKind="server" targetId={server.id} variant="ghost" className="!p-1" />
+                  )}
+                  {server.connectionType !== "local" && (
+                    <button
+                      onClick={(e) => { e.preventDefault(); e.stopPropagation(); setDeleteTarget(server); }}
+                      className="text-xs text-gray-600 hover:text-red-400 transition-colors px-1"
+                      title="Delete server"
+                    >
+                      &times;
+                    </button>
+                  )}
+                </div>
               </div>
               {server.lastHealthCheck && (
                 <p className="text-xs text-gray-600 mt-1">
@@ -353,6 +395,28 @@ export function DashboardPage() {
             </form>
           </div>
         </div>
+      )}
+
+      {deleteTarget && (
+        <DeleteConfirmModal
+          serverLabel={deleteTarget.label}
+          serverId={deleteTarget.id}
+          onConfirm={() => {
+            deleteServer.mutate(
+              { serverId: deleteTarget.id, confirmName: deleteTarget.label },
+              {
+                onSuccess: () => setDeleteTarget(null),
+              },
+            );
+          }}
+          onCancel={() => setDeleteTarget(null)}
+          isDeleting={deleteServer.isPending}
+          error={
+            deleteServer.isError
+              ? (deleteServer.error as Error)?.message ?? "Delete failed"
+              : null
+          }
+        />
       )}
     </div>
   );

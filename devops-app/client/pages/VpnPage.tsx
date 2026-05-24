@@ -2,6 +2,7 @@
 import React, { useState, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { vpnApi, type VpnServer } from "../lib/vpn-api.js";
+import { useServers, type UnifiedServer } from "../lib/servers-api.js";
 import { scriptsApi, type Script, type ScriptParam } from "../lib/scripts-api.js";
 import { ServerList } from "../components/vpn/ServerList.js";
 import { ServerForm } from "../components/vpn/ServerForm.js";
@@ -22,14 +23,37 @@ export function VpnPage() {
   const [executionId, setExecutionId] = useState<string | null>(null);
   const [execError, setExecError] = useState<string | null>(null);
 
-  // Fetch VPN servers
+  const useUnifiedServers = Boolean(
+    typeof window !== "undefined" &&
+    (window as unknown as Record<string, unknown>).__UNIFIED_SERVERS_API__
+  );
+
   const {
-    data: servers = [],
+    data: unifiedServers,
+  } = useServers({ kind: "vpn" });
+
+  const {
+    data: vpnServers = [],
     isLoading: serversLoading,
   } = useQuery({
     queryKey: ["vpn-servers"],
     queryFn: () => vpnApi.list(),
+    enabled: !useUnifiedServers,
   });
+
+  const servers: VpnServer[] = useUnifiedServers
+    ? (unifiedServers ?? []).map((s: UnifiedServer) => ({
+        id: s.id,
+        label: s.label,
+        host: s.host,
+        port: s.port,
+        sshUser: s.sshUser,
+        vpnStatus: (s.vpnStatus as VpnServer["vpnStatus"]) ?? "uninstalled",
+        vpnDriftStatus: (s.vpnDriftStatus as VpnServer["vpnDriftStatus"]) ?? "unknown",
+        vpnInstalledAt: s.vpnInstalledAt,
+        scriptsEnabled: s.scriptsEnabled ?? false,
+      }))
+    : vpnServers;
 
   // Fetch scripts
   const {

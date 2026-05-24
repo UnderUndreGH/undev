@@ -50,6 +50,7 @@ import { aiToolCallsRouter } from "./routes/ai-tool-calls.js";
 import { aiComposeReviewRouter } from "./routes/ai-compose-review.js";
 import { aiSpendRouter } from "./routes/ai-spend.js";
 import { startArchiverCron } from "./services/ai/archiver.js";
+import { unifiedScriptsRouter } from "./routes/unified-scripts.js";
 import { startPushDedupCleanup, stopPushDedupCleanup } from "./services/ai/push-subscriber.js";
 import { startChallengeCleanup, stopChallengeCleanup } from "./routes/ai-tool-calls.js";
 import { initInterruptedDeploysCache } from "./services/interrupted-deploys-scanner.js";
@@ -58,14 +59,20 @@ import { selfProtection } from "./services/self-protection.js";
 
 // ── Feature 016: VPN routes (gated by FEATURE_VPN_ENABLED) ────────────────
 const vpnEnabled = process.env.FEATURE_VPN_ENABLED === "1";
+const unifiedServersApi = process.env.UNIFIED_SERVERS_API_ENABLED === "true";
+if (unifiedServersApi) {
+  console.log("[startup] UNIFIED_SERVERS_API_ENABLED — unified servers endpoint active");
+}
 let vpnServersRouter: express.Router | null = null;
 let vpnScriptsRouter: express.Router | null = null;
+let vpnInstallRouter: express.Router | null = null;
 if (vpnEnabled) {
-  // Dynamic imports so VPN code is only loaded when feature flag is on.
   const vpnServersMod = await import("./routes/servers-vpn.js");
   vpnServersRouter = vpnServersMod.vpnServersRouter;
   const vpnScriptsMod = await import("./routes/vpn-scripts.js");
   vpnScriptsRouter = vpnScriptsMod.vpnScriptsRouter;
+  const vpnInstallMod = await import("./routes/servers-vpn-install.js");
+  vpnInstallRouter = vpnInstallMod.vpnInstallRouter;
 } else {
   console.log("[startup] FEATURE_VPN_ENABLED off — VPN routes disabled");
 }
@@ -163,6 +170,11 @@ if (vpnEnabled && vpnScriptsRouter) {
   app.use("/api/vpn", vpnScriptsRouter);
 }
 
+app.use("/api", unifiedScriptsRouter);
+if (vpnEnabled && vpnInstallRouter) {
+  app.use("/api/servers", vpnInstallRouter);
+}
+
 // Serve static client build in production
 const clientDir = path.resolve(__dirname, "../client");
 app.use(express.static(clientDir));
@@ -228,6 +240,38 @@ async function startup() {
     } catch (err) {
       logger.warn({ ctx: "vpn-drift-cron", err }, "VPN drift cron failed to start");
     }
+  }
+
+  // ── Feature 022: Script System Unification startup checks ──────────
+  try {
+    const { checkSandboxAvailability } = await import("./services/script-executor.js");
+    await checkSandboxAvailability();
+  } catch (err) {
+    logger.error(
+      { ctx: "script-sandbox-check", err },
+      "Sandbox availability check failed — script execution endpoints will return 503",
+    );
+  }
+
+  try {
+    const { stat, chmod, mkdir } = await import("node:fs/promises");
+    const scriptsRoot = process.env.VPN_SCRIPTS_ROOT || "./scripts";
+    await mkdir(scriptsRoot, { recursive: true });
+    const statResult = await stat(scriptsRoot);
+    const mode = statResult.mode & 0o777;
+    if (mode & 0o002) {
+      logger.error(
+        { ctx: "vpn-scripts-root-perm", path: scriptsRoot, mode: mode.toString(8) },
+        "VPN_SCRIPTS_ROOT is world-writable — script upload is insecure. Refusing to enable upload.",
+      );
+    } else {
+      logger.info(
+        { ctx: "vpn-scripts-root-perm", path: scriptsRoot, mode: mode.toString(8) },
+        "VPN_SCRIPTS_ROOT permissions OK",
+      );
+    }
+  } catch (err) {
+    logger.warn({ ctx: "vpn-scripts-root-perm", err }, "VPN_SCRIPTS_ROOT permission check skipped");
   }
 
   // Step 1b: Deploy-lock pool-safety self-check (T015). If a transaction-mode
