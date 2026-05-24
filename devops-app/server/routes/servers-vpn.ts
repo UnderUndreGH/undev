@@ -1,4 +1,11 @@
 /**
+ * @deprecated This router is DEPRECATED and will be REMOVED after UNIFIED_SERVERS_API_ENABLED
+ * has been `true` for one full release cycle (target: v0.22+). All functionality has been
+ * absorbed into the unified `servers.ts` router. Use `GET /api/servers?kind=vpn` instead.
+ *
+ * Planned deletion timeline: after 2025-11-01 or one release after UNIFIED_SERVERS_API_ENABLED=true,
+ * whichever is later. See Feature 021 tasks.md T009.
+ *
  * Feature 016: VPN server management routes.
  *
  *   POST   /servers        — create a VPN server (probe + optional install)
@@ -8,6 +15,12 @@
  * Mounted at /api/vpn by server/index.ts when FEATURE_VPN_ENABLED=1.
  * Auth is applied globally upstream (requireAuth on /api prefix).
  */
+
+console.warn(
+  "[DEPRECATED] servers-vpn.ts router is deprecated (Feature 021). " +
+  "Use the unified servers router with ?kind=vpn instead. " +
+  "This router will be removed after UNIFIED_SERVERS_API_ENABLED has been true for one release cycle."
+);
 
 import { Router } from "express";
 import { z } from "zod";
@@ -21,6 +34,12 @@ import { requireAuth } from "../middleware/auth.js";
 
 export const vpnServersRouter = Router();
 vpnServersRouter.use(requireAuth);
+
+vpnServersRouter.use((_req, res, next) => {
+  res.setHeader("Deprecation", "true");
+  res.setHeader("Sunset", "Sat, 01 Nov 2025 00:00:00 GMT");
+  next();
+});
 
 // ── Zod schemas ──────────────────────────────────────────────────────────────
 
@@ -224,7 +243,7 @@ vpnServersRouter.get("/servers", async (_req, res) => {
     })
     .from(servers);
 
-  res.json({ servers: rows });
+  res.json(rows ?? []);
 });
 
 // ── DELETE /servers/:id — hard-delete VPN server ─────────────────────────────

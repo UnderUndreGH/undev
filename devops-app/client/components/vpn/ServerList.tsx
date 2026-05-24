@@ -1,6 +1,8 @@
-/** Feature 016 T009 — VPN server list with status pills and delete. */
-import React from "react";
+import React, { useState } from "react";
 import type { VpnServer } from "../../lib/vpn-api.js";
+import { InstallButton } from "./InstallButton.js";
+import { ConfigDownload } from "./ConfigDownload.js";
+import { ConfigQRCode } from "./ConfigQRCode.js";
 
 interface Props {
   servers: VpnServer[];
@@ -46,6 +48,8 @@ export function ServerList({
   onDelete,
   onAddServer,
 }: Props): React.JSX.Element {
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
   if (servers.length === 0) {
     return (
       <div className="text-center py-12">
@@ -88,44 +92,73 @@ export function ServerList({
           </thead>
           <tbody>
             {servers.map((server) => (
-              <tr
-                key={server.id}
-                className="border-b border-gray-800/50 hover:bg-gray-900/50"
-              >
-                <td className="py-2 pr-4 font-medium">{server.label}</td>
-                <td className="py-2 pr-4 text-gray-400 font-mono text-xs">
-                  {server.host}:{server.port}
-                </td>
-                <td className="py-2 pr-4">
-                  <StatusPill
-                    value={server.vpnStatus}
-                    styles={STATUS_STYLES}
-                  />
-                </td>
-                <td className="py-2 pr-4">
-                  <StatusPill
-                    value={server.vpnDriftStatus}
-                    styles={DRIFT_STYLES}
-                  />
-                </td>
-                <td className="py-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (
-                        window.confirm(
-                          `Delete server "${server.label}"? This removes it from the dashboard but does NOT uninstall the VPN on the remote host.`,
-                        )
-                      ) {
-                        onDelete(server.id);
-                      }
-                    }}
-                    className="text-xs text-red-400 hover:text-red-300"
-                  >
-                    Delete
-                  </button>
-                </td>
-              </tr>
+              <React.Fragment key={server.id}>
+                <tr
+                  className="border-b border-gray-800/50 hover:bg-gray-900/50 cursor-pointer"
+                  onClick={() =>
+                    setExpandedId(expandedId === server.id ? null : server.id)
+                  }
+                >
+                  <td className="py-2 pr-4 font-medium">
+                    {server.label}
+                    <span className="ml-1 text-gray-600 text-xs">
+                      {expandedId === server.id ? "▾" : "▸"}
+                    </span>
+                  </td>
+                  <td className="py-2 pr-4 text-gray-400 font-mono text-xs">
+                    {server.host}:{server.port}
+                  </td>
+                  <td className="py-2 pr-4">
+                    <StatusPill
+                      value={server.vpnStatus}
+                      styles={STATUS_STYLES}
+                    />
+                  </td>
+                  <td className="py-2 pr-4">
+                    <StatusPill
+                      value={server.vpnDriftStatus}
+                      styles={DRIFT_STYLES}
+                    />
+                  </td>
+                  <td className="py-2">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (
+                          window.confirm(
+                            `Delete server "${server.label}"? This removes it from the dashboard but does NOT uninstall the VPN on the remote host.`,
+                          )
+                        ) {
+                          onDelete(server.id);
+                        }
+                      }}
+                      className="text-xs text-red-400 hover:text-red-300"
+                    >
+                      Delete
+                    </button>
+                  </td>
+                </tr>
+                {expandedId === server.id && (
+                  <tr className="border-b border-gray-800/50">
+                    <td colSpan={5} className="py-3 px-2 bg-gray-950/50">
+                      <div className="space-y-3">
+                        <InstallButton
+                          serverId={server.id}
+                          vpnStatus={server.vpnStatus}
+                          onStatusChange={onRefresh}
+                        />
+                        {server.vpnStatus === "installed" && (
+                          <div className="flex gap-2">
+                            <ConfigDownload serverId={server.id} />
+                            <ConfigQRCode serverId={server.id} />
+                          </div>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </React.Fragment>
             ))}
           </tbody>
         </table>

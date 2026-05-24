@@ -2,8 +2,8 @@ import { Router } from "express";
 import { z } from "zod";
 import { randomUUID } from "node:crypto";
 import { db } from "../db/index.js";
-import { applications, auditEntries } from "../db/schema.js";
-import { eq } from "drizzle-orm";
+import { applications, auditEntries, servers } from "../db/schema.js";
+import { eq, isNull } from "drizzle-orm";
 import { validateBody } from "../middleware/validate.js";
 import {
   load as loadEnvVars,
@@ -84,6 +84,18 @@ const updateAppSchema = createAppSchema.partial();
 // alertsMuted. No explicit field list needed — backward-compatible additive.
 appsRouter.get("/servers/:serverId/apps", async (req, res) => {
   const serverId = req.params.serverId as string;
+
+  const [server] = await db
+    .select({ id: servers.id, deletedAt: servers.deletedAt })
+    .from(servers)
+    .where(eq(servers.id, serverId))
+    .limit(1);
+
+  if (!server || server.deletedAt) {
+    res.status(404).json({ error: { code: "NOT_FOUND", message: "Server not found" } });
+    return;
+  }
+
   const result = await db
     .select()
     .from(applications)

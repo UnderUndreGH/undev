@@ -9,17 +9,28 @@ import { generateText } from "ai";
 import { resolveModel } from "../services/ai/providers.js";
 import { getOperatorId } from "../lib/get-operator-id.js";
 import { randomUUID } from "node:crypto";
+import { validateEndpointUrl } from "../lib/url-validator.js";
 
 export const aiProvidersRouter = Router();
 
-const providerSchema = z.object({
-  provider: z.enum(["anthropic", "openai", "ollama"]),
-  modelDefault: z.string().min(1),
-  endpointUrl: z.string().url().nullable().optional(),
-  apiKey: z.string().min(1),
-  rateCardInputPerMtok: z.number().nonnegative().optional(),
-  rateCardOutputPerMtok: z.number().nonnegative().optional(),
-});
+const providerSchema = z.union([
+  z.object({
+    provider: z.enum(["anthropic", "openai", "ollama"]),
+    modelDefault: z.string().min(1),
+    endpointUrl: z.string().url().nullable().optional(),
+    apiKey: z.string().min(1),
+    rateCardInputPerMtok: z.number().nonnegative().optional(),
+    rateCardOutputPerMtok: z.number().nonnegative().optional(),
+  }),
+  z.object({
+    provider: z.literal("openai-compatible"),
+    modelDefault: z.string().min(1),
+    endpointUrl: z.string().url(),
+    apiKey: z.string().optional(),
+    rateCardInputPerMtok: z.number().nonnegative().optional(),
+    rateCardOutputPerMtok: z.number().nonnegative().optional(),
+  }),
+]);
 
 // GET /api/ai/providers
 aiProvidersRouter.get("/", async (req, res) => {
@@ -47,10 +58,14 @@ aiProvidersRouter.post("/", async (req, res) => {
   }
 
   const { apiKey, ...rest } = parsed.data;
-  const sealed = seal(apiKey);
-  const id = randomUUID();
 
-  // If setting active, deactivate others for same provider
+  if (rest.endpointUrl) {
+    await validateEndpointUrl(rest.endpointUrl);
+  }
+
+  const id = randomUUID();
+  const apiKeyEncrypted = apiKey ? JSON.stringify(seal(apiKey)) : null;
+
   await db.transaction(async (tx) => {
     await tx.update(aiProviderKeys)
       .set({ isActive: false })
@@ -59,7 +74,7 @@ aiProvidersRouter.post("/", async (req, res) => {
     await tx.insert(aiProviderKeys).values({
       id,
       ...rest,
-      apiKeyEncrypted: JSON.stringify(sealed),
+      apiKeyEncrypted,
       isActive: true,
       createdAt: new Date().toISOString(),
     });
@@ -91,7 +106,7 @@ aiProvidersRouter.post("/:id/test", async (req, res) => {
     throw AppError.notFound();
   }
 
-  const model = resolveModel(providerKey);
+  const model = await resolveModel(providerKey);
   const start = performance.now();
   try {
     await generateText({

@@ -90,3 +90,66 @@ export function parseAnnotations(content: string): ParseResult {
 
   return { description, params };
 }
+
+export interface JsonSchemaProperty {
+  type: string;
+  description?: string;
+  default?: unknown;
+  enum?: string[];
+  "x-secret"?: boolean;
+}
+
+export interface ParamToJsonSchemaResult {
+  type: "object";
+  properties: Record<string, JsonSchemaProperty>;
+  required: string[];
+}
+
+const TYPE_MAP: Record<string, string> = {
+  string: "string",
+  number: "number",
+  boolean: "boolean",
+  select: "string",
+};
+
+export function paramsToJsonSchema(params: ParsedParam[]): ParamToJsonSchemaResult | null {
+  if (params.length === 0) return null;
+
+  const properties: Record<string, JsonSchemaProperty> = {};
+  const required: string[] = [];
+
+  for (const p of params) {
+    const jsonType = TYPE_MAP[p.type] ?? "string";
+    const prop: JsonSchemaProperty = {
+      type: jsonType,
+      description: p.description || undefined,
+    };
+
+    if (p.type === "select" && p.options) {
+      prop.enum = p.options;
+    }
+
+    if (p.defaultValue !== undefined) {
+      if (jsonType === "number") {
+        const num = Number(p.defaultValue);
+        if (Number.isFinite(num)) prop.default = num;
+      } else if (jsonType === "boolean") {
+        prop.default = p.defaultValue === "true";
+      } else {
+        prop.default = p.defaultValue;
+      }
+    } else {
+      required.push(p.name);
+    }
+
+    properties[p.name] = prop;
+  }
+
+  const schema: ParamToJsonSchemaResult = {
+    type: "object",
+    properties,
+    required: required.length > 0 ? required : [],
+  };
+
+  return schema;
+}

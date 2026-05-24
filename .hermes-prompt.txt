@@ -1,100 +1,14 @@
-You are an autonomous SpecKit orchestrator. Your task: take the prioritized list below (6 items) and create SIX separate feature specs, ONE per item, using the project's `/speckit.full-spec` command for each.
+Execute the following implementation tasks for the spec "017-vpn-tab-deserialize-fix".
 
-CRITICAL RULES:
-- Run /speckit.full-spec SIX TIMES, sequentially, one per priority item
-- For each call, pass a complete feature description that incorporates the "why", "key files", and "scope" notes from the priority entry below
-- DO NOT commit anything to git
-- DO NOT use --force, --yes, -y flags anywhere
-- If /speckit.full-spec asks clarification questions, answer them YOURSELF based on the audit context provided below — use your best judgment from existing codebase. Only flag [NEEDS-USER-INPUT] in the final report if you genuinely cannot decide (e.g., business policy, naming preference, UX trade-off with no clear better answer)
-- For item #6 (script unification), explicitly add a section "[SECURITY-PASS-REQUIRED]" in the spec describing the RCE vectors that must be closed before implementation
-- After all 6 specs are done, print a final report (format at bottom)
+TASK 1 - T001 & T002: Fix response shape
+- File: devops-app/server/routes/servers-vpn.ts
+- What to do: Find the route for GET /api/servers/vpn and change `res.json({ servers: rows })` to `res.json(rows ?? [])`. Never pass potentially null/undefined rows directly.
 
-BEFORE STARTING:
-- Read `specs/main/architecture.md` and `specs/main/requirements.md` to anchor terminology
-- List existing specs: `ls specs/` — these influence naming (NN-slug pattern) and provide reference for similar features. Look especially at specs/016-vpn-features (already implemented per session memory) — items #2 and #5 are direct follow-ups
-- Check `.specify/scripts/powershell/check-prerequisites.ps1` and `create-new-feature.ps1` to confirm SpecKit infra is intact
+TASK 2 - T002b: Check consumers
+- What to do: Find consumers of `/api/servers/vpn` in the codebase (e.g., devops-app/client/lib/vpn-api.ts). Verify they expect an array and update them if they don't.
 
-AUDIT CONTEXT (from earlier read-only investigation — facts, not assumptions):
-- VPN backend returns `{ servers: rows }` but client expects array — see `server/routes/servers-vpn.ts:227` vs `client/lib/vpn-api.ts:28`
-- Server deletion backend exists at `DELETE /api/servers/:id` (`server/routes/servers.ts:117-136`) but lacks UI and audit-entry; 6-table CASCADE risk (apps, deploys, backups, certs, health, locks)
-- Two script systems: Feature 005 (Zod-manifest, 13 hardcoded scripts) + Feature 016 (`# @param` annotations, DB-stored) with incompatible parsers
-- AI Copilot has pluggable providers at `server/services/ai/providers.ts:12` (anthropic/openai/ollama) — needs OpenAI-compatible variant. Existing AES-256-GCM encryption for `api_key_encrypted` in `ai_provider_keys` table. Settings UI at `client/components/settings/AiSettingsSection.tsx` already supports CRUD + test connectivity + budget controls
-- Amnezia install is a stub: checkbox sets vpnStatus="installing" then halts — no install-amnezia.sh script, no config extraction, no delivery. Feature 016 worker integration is there but the install action is unwired
-- Storage is unified (single `servers` table with VPN columns via ALTER) but two routers + two React Query caches cause drift
+TASK 3: Update Tasks Status
+- File: specs/017-vpn-tab-deserialize-fix/tasks.md
+- What to do: Mark tasks T001, T002, T002b, and T003 as complete by changing `[ ]` to `[X]` in the markdown file.
 
-═══════════════════════════════════════════════════════════════
-THE 6 PRIORITIES — RUN /speckit.full-spec ONE PER ITEM, IN ORDER
-═══════════════════════════════════════════════════════════════
-
-#1 — VPN tab deserialize fix (TRIVIAL, 1 line)
-- Goal: change `res.json({ servers: rows })` → `res.json(rows)` in `server/routes/servers-vpn.ts:227` so client `vpn-api.ts:28` receives array as expected
-- Scope: this single endpoint + manual verification test
-- Acceptance: VPN tab displays existing VPN-flagged servers
-- Slug suggestion: vpn-tab-deserialize-fix
-
-#2 — Amnezia VPN install completion (HIGH effort, HIGH impact)
-- Goal: finish the stubbed install flow. Currently: clicking "Install Amnezia VPN" sets vpnStatus="installing" and stops. Need: install-amnezia.sh script, worker invocation, config extraction (.vpn URL or WireGuard .conf + QR), delivery to user via dashboard (download / QR display / copy-to-clipboard)
-- Scope: `scripts/vpn/install-amnezia.sh` (new), worker integration, schema for storing extracted configs, UI for delivery (modal or sidebar)
-- Acceptance: end-to-end install on fresh Ubuntu VPS → user can download `.vpn` or scan QR → connect via Amnezia client → status updates to "running"
-- Note: builds on Feature 016 (already implemented per session memory observation 905); this is FOLLOWUP spec to close the gap
-- Slug suggestion: amnezia-install-completion
-
-#3 — Server soft-delete with grace period (MEDIUM)
-- Goal: add UI "Delete Server" button with soft-delete semantics. New `deletedAt` column on `servers` table, all queries filter `WHERE deletedAt IS NULL`, finalization cron after 30 days triggers CASCADE. "Restore" action in archived-servers panel within the 30-day window.
-- Scope: schema migration (add `deletedAt` to servers), update queries that read `servers` (~8 callsites), new cron worker, audit-entry for delete events, confirmation modal (GitHub-style "type server name to confirm"), archived servers view
-- Acceptance: user can delete; deleted servers disappear from main list but appear in Archived view; restore works within 30 days; after 30 days CASCADE fires automatically; audit log shows every delete event with actor + timestamp
-- Files in scope: `server/db/schema.ts` (servers table), `server/db/queries/servers.ts`, `server/routes/servers.ts`, new cron worker, `client/components/servers/` (delete button + confirmation modal + archived view)
-- Slug suggestion: server-soft-delete
-
-#4 — AI Copilot custom OpenAI/Anthropic provider (LOW effort, MEDIUM impact)
-- Goal: add `openai-compatible` provider type so users can plug in Azure OpenAI, OpenRouter, LM Studio, vLLM, llama.cpp server, etc. via custom baseURL. For Anthropic, support custom baseURL via `@ai-sdk/anthropic` config (it accepts a `baseURL` option).
-- Scope: ~3 files — `server/db/schema.ts` (extend `ai_provider_type` enum to include `openai-compatible`), `server/services/ai/providers.ts:12` (add case using `createOpenAICompatible({ baseURL, apiKey })` from `@ai-sdk/openai-compatible`), `client/components/settings/ProviderConfigForm.tsx` (show `endpointUrl` text field for new provider type)
-- Acceptance: user enters baseURL + apiKey + model name in Settings for arbitrary OpenAI-compatible endpoint; test-connectivity round-trips successfully; incident copilot can invoke that provider for chat completions and tool calls
-- Slug suggestion: ai-custom-provider
-
-#5 — VPN/Server unification (MEDIUM)
-- Goal: collapse two routers + two React Query caches into one unified API. Build ON TOP of #1 (assume #1 already shipped). New API: `GET /api/servers?kind=vpn` (or compute kind from `vpnStatus IS NOT NULL`). Single React Query cache with filter-aware key `["servers", { kind }]`. Merge `AddServerForm` + VPN `ServerForm` into one component with conditional fields based on kind.
-- Scope: ~8 files — `server/db/schema.ts` (optional `kind` column or computed view), retire `server/routes/servers-vpn.ts` (merge endpoints into `servers.ts`), retire duplicate React Query hooks in `client/lib/vpn-api.ts`, merge form components, update VPN tab to use kind filter
-- Acceptance: one router, one cache, one form; VPN tab shows filtered subset and works identically; adding a third server type (e.g., k8s, proxmox) later requires only schema enum update + conditional form section
-- Slug suggestion: vpn-server-unification
-
-#6 — Script system unification (HIGH, security-blocked)
-- Goal: unify two script-execution systems (Feature 005 Zod-manifest with 13 hardcoded scripts + Feature 016 `# @param` DB-stored). Proposed approach: keep `# @param` parser as fallback for legacy/portability, primary is Zod-manifest GENERATED from uploaded .sh files, stored as JSON Schema in DB (not raw Zod strings — never eval untrusted code), compiled back to Zod at runtime via `json-schema-to-zod`.
-- [SECURITY-PASS-REQUIRED] — explicit blocker section in spec:
-  * Current `# @param` validation lets ANY bash content pass execution — need content scanner for `rm -rf /`, `curl | bash`, `eval`, `exec`, network exfiltration patterns, fork bombs
-  * `VPN_SCRIPTS_ROOT` writability needs RBAC enforcement — if attacker can write into this directory, prior script-upload protection is bypassed, full RCE on every script execution
-  * Arbitrary script upload needs RBAC: only admin role can upload; audit every upload event; hash + sign scripts at rest; verify signature at execution
-  * Sandboxing: scripts currently run on VPS with full deploy-user privileges — investigate firejail/bubblewrap/landlock for syscall-level confinement
-- Scope: parser refactor, JSON Schema↔Zod converter (use `zod-to-json-schema` for forward conversion + `json-schema-to-zod` for back), bash content security scanner, RBAC layer for script CRUD, sandboxed runner
-- Acceptance: user uploads .sh, system parses parameters + scans content + stores; runtime executes inside sandbox; legacy `# @param` scripts continue working; admins see full audit trail of upload + execute events
-- Slug suggestion: script-system-unification
-- Note: explicitly state in spec.md that implementation is BLOCKED on completion of the [SECURITY-PASS-REQUIRED] section. tasks.md (when generated later via /speckit.tasks) should be tagged "BLOCKED on security pass" at the top.
-
-═══════════════════════════════════════════════════════════════
-EXECUTION
-═══════════════════════════════════════════════════════════════
-1. Read architecture.md + requirements.md + ls specs/
-2. For each priority #1 → #6 in order:
-   a. Invoke /speckit.full-spec with the feature description above
-   b. Answer any clarify questions yourself using audit context (flag [NEEDS-USER-INPUT] only when truly stuck)
-   c. Note the resulting branch name + spec.md path
-3. Print final report in this exact format:
-
-```
-COMPLETED 6 SPECS:
-1. <slug> — <branch-name> — <specs/NN-slug/spec.md>
-2. <slug> — <branch-name> — <specs/NN-slug/spec.md>
-3. <slug> — <branch-name> — <specs/NN-slug/spec.md>
-4. <slug> — <branch-name> — <specs/NN-slug/spec.md>
-5. <slug> — <branch-name> — <specs/NN-slug/spec.md>
-6. <slug> — <branch-name> — <specs/NN-slug/spec.md>
-
-UNRESOLVED [NEEDS-USER-INPUT]:
-- spec <slug>: <question>
-- ...
-
-SECURITY NOTES:
-- Item #6 includes [SECURITY-PASS-REQUIRED] section: <one-line summary>
-```
-
-If any /speckit.full-spec invocation fails (validation failure, infra error, etc.), STOP, do not proceed to next spec, print which one failed + the full error, and exit. Do not silently skip.
+Do not commit. When done, print a summary of the files modified.

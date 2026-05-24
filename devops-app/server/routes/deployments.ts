@@ -82,6 +82,11 @@ deploymentsRouter.post(
       return;
     }
 
+    if (server.deletedAt) {
+      res.status(410).json({ error: { code: "SERVER_ARCHIVED", message: "Server has been archived" } });
+      return;
+    }
+
     // Feature 007 (fail-closed gate): if scriptPath is set on the row, run the
     // validator BEFORE opening any SSH connection. SC-007 requires invalid
     // runtime state to fail closed before any network side effect. The
@@ -376,6 +381,11 @@ deploymentsRouter.post(
 
     if (!server) {
       res.status(404).json({ error: { code: "NOT_FOUND", message: "Server not found" } });
+      return;
+    }
+
+    if (server.deletedAt) {
+      res.status(410).json({ error: { code: "SERVER_ARCHIVED", message: "Server has been archived" } });
       return;
     }
 

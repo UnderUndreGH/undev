@@ -3,7 +3,7 @@ import { z } from "zod";
 import { randomUUID } from "node:crypto";
 import { db } from "../db/index.js";
 import { backups, servers } from "../db/schema.js";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, isNull, and } from "drizzle-orm";
 import { validateBody } from "../middleware/validate.js";
 import { scriptRunner } from "../services/ssh-executor.js";
 import { jobManager } from "../services/job-manager.js";
@@ -19,6 +19,18 @@ const createBackupSchema = z.object({
 // GET /api/servers/:serverId/backups
 backupsRouter.get("/servers/:serverId/backups", async (req, res) => {
   const serverId = req.params.serverId as string;
+
+  const [server] = await db
+    .select({ id: servers.id, deletedAt: servers.deletedAt })
+    .from(servers)
+    .where(eq(servers.id, serverId))
+    .limit(1);
+
+  if (!server || server.deletedAt) {
+    res.status(404).json({ error: { code: "NOT_FOUND", message: "Server not found" } });
+    return;
+  }
+
   const result = await db
     .select()
     .from(backups)
@@ -42,7 +54,7 @@ backupsRouter.post(
       .where(eq(servers.id, serverId))
       .limit(1);
 
-    if (!server) {
+    if (!server || server.deletedAt) {
       res.status(404).json({ error: { code: "NOT_FOUND", message: "Server not found" } });
       return;
     }

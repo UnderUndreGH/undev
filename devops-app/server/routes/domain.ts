@@ -82,7 +82,7 @@ domainRouter.patch(
       return;
     }
     const [srv] = await db.select().from(servers).where(eq(servers.id, app.serverId)).limit(1);
-    if (!srv) {
+    if (!srv || srv.deletedAt) {
       res.status(500).json({ error: { code: "SERVER_NOT_FOUND", message: "Owning server missing" } });
       return;
     }

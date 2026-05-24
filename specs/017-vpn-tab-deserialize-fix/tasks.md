@@ -5,15 +5,15 @@
 
 ## Phase 1: Fix (Single Change)
 
-- [ ] T001 [BE] Fix response shape in `server/routes/servers-vpn.ts:227` — change `res.json({ servers: rows })` to `res.json(rows)`
+- [X] T001 [BE] Fix response shape in `server/routes/servers-vpn.ts:227` — change `res.json({ servers: rows })` to `res.json(rows)`
 
 ---
 
 ## Phase 2: Verification
 
-- [ ] T002 [BE] Verify VPN tab loads correctly with VPN-flagged servers. Code must use res.json(rows ?? []) — never pass potentially null/undefined rows directly
-- [ ] T002b [BE] Grep entire codebase for `/api/servers/vpn` consumers (server, client, scripts, tests). Confirm only `client/lib/vpn-api.ts` consumes this endpoint. If other consumers exist, update them to expect array
-- [ ] T003 [BE] Verify empty state renders gracefully when no VPN servers exist
+- [X] T002 [BE] Verify VPN tab loads correctly with VPN-flagged servers. Code must use res.json(rows ?? []) — never pass potentially null/undefined rows directly
+- [X] T002b [BE] Grep entire codebase for `/api/servers/vpn` consumers (server, client, scripts, tests). Confirm only `client/lib/vpn-api.ts` consumes this endpoint. If other consumers exist, update them to expect array
+- [X] T003 [BE] Verify empty state renders gracefully when no VPN servers exist
 
 ---
 
