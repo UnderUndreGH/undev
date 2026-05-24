@@ -36,4 +36,7 @@ type ProviderType =
 ```sql
 -- 020-add-endpoint-url.sql
 ALTER TABLE ai_provider_keys ADD COLUMN IF NOT EXISTS "endpointUrl" TEXT;
+
+-- Make api_key_encrypted nullable for local endpoints that don't require auth
+ALTER TABLE ai_provider_keys ALTER COLUMN api_key_encrypted DROP NOT NULL;
 ```

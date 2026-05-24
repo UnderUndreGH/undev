@@ -8,8 +8,12 @@
 **Purpose**: Migration and provider type extension
 
 - [ ] T001 [DB] Generate migration `server/db/migrations/020-add-endpoint-url.sql` — add `endpointUrl` column to `ai_provider_keys`
-- [ ] T002 [BE] Update provider type enum in `server/lib/provider-types.ts` — add `openai-compatible` type, update Zod validation schema to require `endpointUrl` when type is `openai-compatible`
+- [ ] T002 [BE] Update provider type enum in `server/lib/provider-types.ts` — add `openai-compatible` type, update Zod validation schema: `apiKey: z.string().min(1).optional()` (optional for openai-compatible), require `endpointUrl` when type is `openai-compatible`. Include migration to make `api_key_encrypted` column nullable: `ALTER TABLE ai_provider_keys ALTER COLUMN api_key_encrypted DROP NOT NULL;`
 - [ ] T003 [DB] Update Drizzle schema for `endpointUrl` column
+- [ ] T006a [BE][SEC] Implement `server/lib/url-validator.ts` — URL denylist validator: block private IPv4 (10/8, 172.16/12, 192.168/16), link-local (169.254/16, fe80::/10), loopback (127/8, ::1), CGNAT (100.64/10). Resolve hostnames via `dns.promises.lookup` and check resolved IP. Comprehensive test suite covering all denylist ranges + DNS rebinding scenario
+- [ ] T006b [BE] Integrate URL validator at provider config endpoint (POST/PATCH) — reject config with private/internal endpointUrl
+- [ ] T006c [BE] Integrate URL validator at fetch-time wrapper — validate endpointUrl before every outbound AI API call, re-resolve hostname to catch DNS rebinding
+- [ ] T006d [BE] Add `ALLOW_LOCAL_AI_ENDPOINTS` env var override — when true, allow local endpoints but emit audit entry per request
 
 ---
 
@@ -26,7 +30,7 @@
 
 **Purpose**: Endpoint to verify custom provider connectivity
 
-- [ ] T006 [BE] Implement `POST /api/ai/providers/:id/test` in `server/routes/ai-providers.ts` — instantiate provider with config, send minimal chat completion, measure latency, return pass/fail
+- [ ] T006 [BE] Implement `POST /api/ai/providers/:id/test` in `server/routes/ai-providers.ts` — instantiate provider with config, send minimal chat completion with payload "ping" using `max_completion_tokens: 5` (newer field, falls back to `max_tokens: 5` if 400 error). If both fail, attempt minimal stream-test (no max tokens). Goal: detect connectivity without breaking on quirky models (o1, structured outputs, etc.). Measure latency, return pass/fail.
 
 ---
 
@@ -56,6 +60,11 @@
 
 T001 → T003
 T002 → T004
+T002 → T006a
+T006a → T006b, T006c
+T006b → T005
+T006c → T004
+T006a → T006d
 T003 → T004
 T004 → T005, T006
 T005 → T007, T008

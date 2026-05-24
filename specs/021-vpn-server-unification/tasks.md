@@ -36,7 +36,7 @@
 
 - [ ] T005 [BE] Create `server/lib/server-types.ts` — `ServerKind` enum, kind validation Zod schema
 - [ ] T006 [BE] Create `server/services/server-queries.ts` — unified query builder accepting `{ kind: "all" | "vpn" | "general" }` parameter
-- [ ] T007 [BE] Update `server/routes/servers.ts` — add `?kind=` query param to `GET /api/servers`, use unified query service
+- [ ] T007 [BE] Update `server/routes/servers.ts` — add `?kind=` query param to `GET /api/servers`, use unified query service. Kind transitions enforced via Zod discriminatedUnion: standard→vpn requires install flow trigger, vpn→standard requires explicit confirmation + transactional cleanup of all VPN fields (vpnConfig, vpnPubkey, vpnEndpoint, vpnInstalledAt). NO direct kind mutation endpoint.
 
 ---
 
@@ -63,7 +63,7 @@
 **Purpose**: Merge form components, update VPN tab to filtered view
 
 - [ ] T012 [FE] Update `client/components/servers/ServerList.tsx` — add kind filter dropdown (All / VPN / General), use unified hook
-- [ ] T013 [FE] Merge server forms — unify `AddServerForm` and VPN `ServerForm` into single `ServerForm.tsx` with conditional fields based on `kind`
+- [ ] T013 [FE] Merge server forms — unify `AddServerForm` and VPN `ServerForm` into single `ServerForm.tsx` with conditional fields based on `kind`. Use Zod `discriminatedUnion('kind', [standardServerSchema, vpnServerSchema])`. Frontend strips out-of-discriminator fields before submit. Backend re-validates with same discriminated union — rejects payloads with stale fields from the other variant.
 - [ ] T014 [FE] Update `client/components/servers/VPNTab.tsx` — use `useServers({ kind: "vpn" })` instead of VPN-specific hook; render as filtered view of unified list
 
 ---

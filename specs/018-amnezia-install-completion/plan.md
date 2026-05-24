@@ -80,6 +80,14 @@ client/
 - Script stages: (1) SSH connect, (2) install packages, (3) configure Amnezia, (4) extract config, (5) cleanup
 - Worker reports progress via existing worker event system (Feature 016 pattern)
 
+### Async Install Architecture
+- Worker executes install in detached background process (SSH session)
+- HTTP POST returns 202 Accepted immediately with `install_id`
+- Client polls `GET /api/servers/:id/install-status/:install_id` for stage progress
+- SSH keep-alive: `ServerAliveInterval=30 ServerAliveCountMax=240` (2-hour window)
+- Hard timeout: 30 minutes, configurable via `AMNEZIA_INSTALL_TIMEOUT_MIN` env var
+- Status persistence: install progress persisted to `servers.vpnStatus` field + in-memory map for active installs
+
 ### Config Extraction
 - Amnezia generates config files in a known path after install
 - Config is typically a WireGuard `.conf` or Amnezia `.vpn` file

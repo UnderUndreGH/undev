@@ -17,6 +17,7 @@ Trigger Amnezia VPN installation on a server.
 **Response** (202 Accepted):
 ```json
 {
+  "install_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
   "serverId": 1,
   "status": "installing",
   "message": "Installation started"
@@ -39,16 +40,18 @@ Trigger Amnezia VPN installation on a server.
 
 ---
 
-## GET /api/servers/:id/vpn/status
+## GET /api/servers/:id/vpn/install-status/:install_id
 
 Poll installation progress.
 
 **Response** (200):
 ```json
 {
+  "install_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
   "serverId": 1,
   "vpnStatus": "configuring",
   "stage": "configuring",
+  "progress": 60,
   "message": "Configuring Amnezia VPN service...",
   "startedAt": "2025-05-24T10:00:00Z"
 }
@@ -76,16 +79,4 @@ Download VPN configuration file.
 
 ---
 
-## GET /api/servers/:id/vpn/config/qr
 
-Get QR code for VPN configuration.
-
-**Query params**: `format=wireguard|amnezia`
-
-**Response** (200):
-```json
-{
-  "qrCodeDataUrl": "data:image/svg+xml;base64,...",
-  "format": "wireguard"
-}
-```

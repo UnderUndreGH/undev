@@ -23,6 +23,8 @@
 - [ ] T002 [SEC] [SECURITY] **`VPN_SCRIPTS_ROOT` Writability RBAC** — Define and validate filesystem permission policy: directory owned by deploy user, permissions 755 or stricter, startup check with refusal to start if insecure. Produce confirmed permission policy signed off by security reviewer.
 - [ ] T003 [SEC] [SECURITY] **Arbitrary Script Upload RBAC** — Define and validate RBAC policy: admin-only upload/update/delete, audit every event with actor identity, SHA-256 hash at rest (signing deferred to v2), hash verification at execution. Produce confirmed RBAC policy signed off by security reviewer.
 - [ ] T004 [SEC] [SECURITY] **Sandboxed Execution Technology** — Evaluate and select sandboxing technology (firejail recommended, bubblewrap alternative). Validate kernel requirements, produce default-deny profile, document minimum kernel version. Produce chosen technology with justification signed off by security reviewer.
+- [ ] T000-sec [BE][SEC] Pre-flight sandbox availability check at server startup. If firejail/bubblewrap is not installed, log critical error and disable script execution endpoints (return 503 on execute). Document in deployment docs.
+- [ ] T011-sec [BE][SEC] Every script execution attempt verifies sandbox is functional (quick test) before launching real workload. If verification fails, abort with 503 + audit entry.
 
 **Phase 0 gate**: All 4 tasks MUST reach `[X]` with signed-off documents before Phase 2 begins. Phase 1 (data model + contracts) may proceed in parallel with security review.
 
@@ -36,7 +38,7 @@
 - [ ] T006 [DB] Generate migration `server/db/migrations/022-create-script-audit.sql` — create `script_audit_entries` table with indexes
 - [ ] T007 [DB] Update Drizzle schema in `server/db/schema.ts` — add `scripts` and `script_audit_entries` schemas
 - [ ] T008 [BE] Create `server/lib/script-types.ts` — TypeScript types for Script, ScriptParameterSchema, AuditEntry, ScriptSource enum
-- [ ] T009 [SETUP] Add `zod-to-json-schema` and `json-schema-to-zod` npm dependencies to server package
+- [ ] T009 [SETUP] Add ajv and ajv-formats npm dependencies to server package (for runtime JSON Schema validation). zod-to-json-schema may be needed for one-time migration only (T022) — add as devDependency if needed.
 
 ---
 
@@ -44,10 +46,10 @@
 
 **Purpose**: Implement the 4 security vectors as standalone services
 
-- [ ] T010 [BE][SEC] Implement `server/services/script-scanner.ts` — **multi-layer scanner**: (1) shell unescape preprocessor (T001b), (2) AST-based analysis with chosen parser (T001a), fail-closed on parse failure, (3) regex denylist on normalized content (T001), (4) indirection denylist (T001c). Returns specific violation descriptions with layer identification. Unit-testable.
+- [ ] T010 [BE][SEC] Implement `server/services/script-scanner.ts` — advisory pattern scanner: multi-layer detection (unescape + AST + regex + indirection) but advisory-only — warns admin on upload, does NOT block upload or execution. Returns specific warning descriptions with layer identification. The sandbox (T013) is the sole security boundary.
 - [ ] T011 [BE] Implement `server/services/script-integrity.ts` — SHA-256 hash computation at upload, hash verification before execution, mismatch → block + audit entry
 - [ ] T012 [BE] Implement `server/middleware/script-rbac.ts` — admin-only check on upload/update/delete endpoints, audit every CRUD event with actor identity
-- [ ] T013 [BE] Implement `server/services/script-executor.ts` — sandboxed execution engine using chosen technology from T004, default-deny profile, fallback with WARNING when sandbox unavailable
+- [ ] T013 [BE] Implement `server/services/script-executor.ts` — sandboxed execution engine using chosen technology from T004. Default-deny profile. **MUST fail-closed: if sandbox initialization fails, execution is blocked (see FR-008).** No fallback to unsandboxed execution.
 
 ---
 
@@ -56,7 +58,7 @@
 **Purpose**: Parser, JSON Schema conversion, startup permission check
 
 - [ ] T014 [BE] Implement `server/services/script-parser.ts` — `# @param` annotation parser → JSON Schema conversion, support string/number/boolean/enum types with defaults
-- [ ] T015 [BE] Implement `server/lib/json-schema-to-zod.ts` — runtime JSON Schema → Zod conversion wrapper using `json-schema-to-zod` package, validate parameters before execution
+- [ ] T015 [BE] Implement `server/lib/ajv-validator.ts` — ajv-based JSON Schema validator. Compiles stored JSON Schema at execution time, validates user params, returns structured errors. No eval, no Zod for dynamic schemas.
 - [ ] T016 [BE] Implement `VPN_SCRIPTS_ROOT` startup check — verify directory permissions (not world-writable), log permission check result, refuse to start if insecure (from T002 policy)
 
 ---
@@ -69,7 +71,7 @@
 - [ ] T018 [BE] Implement `GET /api/scripts` in `server/routes/scripts.ts` — list all scripts with parameter schema
 - [ ] T019 [BE] Implement `PUT /api/scripts/:id` in `server/routes/scripts.ts` — admin-only update, re-scan on content change, re-hash, update parameter schema
 - [ ] T020 [BE] Implement `DELETE /api/scripts/:id` in `server/routes/scripts.ts` — admin-only delete, remove file from disk, audit entry
-- [ ] T021 [BE] Implement `POST /api/scripts/:id/execute` in `server/routes/scripts.ts` — validate params via Zod (T015), verify hash (T011), execute in sandbox (T013), return stdout/stderr/exit code, audit execution
+- [ ] T021 [BE] Implement `POST /api/scripts/:id/execute` in `server/routes/scripts.ts` — validate params via ajv (T015), verify hash (T011), execute in sandbox (T013), return stdout/stderr/exit code, audit execution
 
 ---
 
@@ -77,8 +79,8 @@
 
 **Purpose**: Migrate Feature 005 + Feature 016 scripts into unified table
 
-- [ ] T022 [BE] Migrate Feature 005 hardcoded scripts — insert 13 scripts into `scripts` table with `source='feature-005'`, convert Zod schemas to JSON Schema, maintain backward compat
-- [ ] T023 [BE] Migrate Feature 016 `# @param` DB scripts — parse existing `# @param` annotations → JSON Schema, insert into `scripts` table with `source='feature-016'`
+- [ ] T022 [BE] One-time CLI migration: create node scripts/migrate-feature-005-to-jsonschema.mjs — reads Feature 005 hardcoded Zod schemas, converts each to JSON Schema via zod-to-json-schema (this IS a legitimate use of the package — at MIGRATION time only, not runtime), persists rows to scripts table with source='feature-005-zod'. Run by admin manually, not as part of startup.
+- [ ] T023 [BE] Migrate Feature 016 # @param DB scripts — parse existing # @param annotations → JSON Schema using the unified parser (T014), insert into scripts table with source='feature-016'. These scripts already have # @param annotations, so the parser is reused directly.
 - [ ] T024 [BE] Deprecate Feature 005 script registration code as primary — redirect hardcoded script execution through unified system. Original registration code RETAINED as fallback (not deleted). Scripts with `source='feature-005'` use unified path; if unified path fails, fallback to original Feature 005 registration.
 - [ ] T025 [BE] Deprecate Feature 016 `# @param` direct execution as primary — redirect through unified system. `# @param` parser RETAINED as fallback per FR-009. If unified parser fails, fallback to original `# @param` parsing.
 
@@ -107,7 +109,7 @@
 - [ ] T036 [BE] Verify Feature 016 scripts run identically through unified system (zero regression)
 - [ ] T037 [BE] Verify script upload → parse → execute end-to-end with dynamic form
 - [ ] T038 [FE] Verify script library shows all scripts with correct RBAC actions per user role
-- [ ] T038v [BE] **Roundtrip fidelity test**: For each supported JSON Schema construct (string, number, boolean, enum, array, object, nested), validate that Zod re-conversion preserves all constraints (min/max, pattern, format, required/optional). If any construct doesn't roundtrip cleanly, the upload endpoint MUST reject scripts using that construct with a clear error per FR-003 fallback strategy.
+- [ ] T038v [BE] **ajv validation test**: For each supported JSON Schema construct (string, number, boolean, enum, array, object, nested), validate that ajv correctly validates and rejects inputs. Test all constraints (min/max, pattern, format, required/optional). Confirm no eval is involved — pure ajv compilation.
 
 ---
 
@@ -119,6 +121,10 @@ T001 + T001a + T001b + T001c → T010
 T002 → T016
 T003 → T012
 T004 → T013
+T004 → T000-sec
+T000-sec → T017
+T013 → T011-sec
+T011-sec → T021
 T005 + T006 + T007 → T017, T018, T019, T020, T021
 T008 → T014
 T009 → T015
@@ -156,6 +162,10 @@ graph LR
     T002 --> T016
     T003 --> T012
     T004 --> T013
+    T004 --> T000-sec
+    T000-sec --> T017
+    T013 --> T011-sec
+    T011-sec --> T021
     T005 & T006 & T007 --> T017
     T005 & T006 & T007 --> T018
     T005 & T006 & T007 --> T019
@@ -200,10 +210,10 @@ graph LR
 
 | Lane | Agent Flow | Tasks | Blocked By |
 |------|-----------|-------|------------|
-| 1 | [SEC] | T001, T002, T003, T004 | — |
+| 1 | [SEC] | T001, T002, T003, T004, T000-sec | — |
 | 2 | [DB] | T005, T006 → T007 | — |
 | 3 | [BE] types | T008, T009 | — |
-| 4 | [BE] security | T010, T011, T012, T013 | T001-T004 |
+| 4 | [BE] security | T010, T011, T012, T013, T011-sec | T001-T004 |
 | 5 | [BE] core | T014, T015, T016 | T008-T009, T002 |
 | 6 | [BE] API | T017-T021 | T005-T007, T010-T016 |
 | 7 | [BE] legacy | T022-T025 | T017, T021 |
@@ -219,7 +229,7 @@ graph LR
 | [SEC] | 4 | immediately (Phase 0) |
 | [DB] | 3 | immediately (Phase 1) |
 | [SETUP] | 1 | immediately |
-| [BE] | 13 | T001-T004 (Phase 0 sign-off), T005-T009 |
+| [BE] | 15 | T001-T004 (Phase 0 sign-off), T005-T009 |
 | [FE] | 5 | T017 (API endpoints) |
 | verify | 8 | all implementation |
 
@@ -263,4 +273,4 @@ Ship MVP → add frontend → add legacy migration.
 - Scanner denylist MUST be extensible — new patterns added without code changes (config file or DB table)
 - Sandboxed execution logs `sandboxed: true/false` in audit — critical for compliance
 - Legacy migration is backward-compatible — existing scripts must not break
-- `json-schema-to-zod` is a runtime dependency — ensure it handles all common types
+- `ajv` is a runtime dependency — battle-tested JSON Schema validator, no eval involved

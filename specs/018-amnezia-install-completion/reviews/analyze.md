@@ -2,8 +2,8 @@
 
 **Reviewer**: analyze
 **Date**: 2026-05-24
-**Branch**: 018-amnezia-install-completion
-**Artifacts reviewed**: spec.md, plan.md, tasks.md
+**Branch**: specs/017-022
+**Artifacts reviewed**: spec.md, plan.md, tasks.md, data-model.md, contracts/vpn-install.md
 
 ---
 
@@ -11,65 +11,73 @@
 
 ### 1. Duplication Detection
 
-Minor: plan.md §Research Decisions restates spec.md §Assumptions (Amnezia CLI headless support, AES-256-GCM encryption pattern). Acceptable — plan provides technical detail that spec leaves at assumption level.
+Scanned all artifacts for near-duplicate requirements.
+
+- **FR-002 vs FR-007**: FR-002 covers stage-based progress reporting; FR-007 covers `vpnStatus` lifecycle transitions. Complementary (FR-002 = granular stages within FR-007's "installing" state), not duplicates.
+- **T007 vs T009 vs T013**: T007 (vpn-config.ts) handles config decryption + format detection. T009 drops server-side QR endpoint. T013 implements client-side QR. No overlap — clean separation after remediation.
+- **T015 API methods**: `triggerInstall()`, `getInstallStatus()`, `downloadConfig()` — no stale `getConfigQR()` reference. Clean.
+
+No duplication findings.
 
 ### 2. Ambiguity Detection
 
-**Finding A001** [MEDIUM]: spec.md FR-004 says "System MUST store the extracted configuration securely (encrypted at rest)" but doesn't specify what constitutes the config lifecycle — when is it decrypted, who has access, is there a rotation policy. plan.md §Encryption mentions AES-256-GCM and "decrypted at delivery time only" which partially addresses this, but no task explicitly validates encryption correctness.
-
-**Finding A002** [LOW]: spec.md line 101 assumes "Amnezia VPN supports headless install via script (documented in Amnezia CLI/docs)" — this is an unvalidated external dependency. If Amnezia CLI doesn't support headless install, the entire feature is blocked. plan.md acknowledges this as a constraint but no task validates it (would be a research task, correctly not in scope for implementation tasks).
-
-**Finding A003** [LOW]: spec mentions `.vpn` file format and WireGuard `.conf` — plan/tasks handle both formats but don't specify format detection logic. T007 (vpn-config.ts) should handle this, but the format detection is implicit.
+- **`$GENERATED_CONFIG` / `$GENERATED_WG_CONFIG` in T002**: Shell variables referenced in copy commands but not defined in the script skeleton. The assumption is Amnezia installer outputs to known paths, but the variable assignment is unspecified. LOW — implementation detail resolvable during T002 implementation.
+- **"In-memory map for active installs"** (plan.md): Not persisted. If the server restarts mid-install, the install_id mapping is lost. No recovery strategy specified. LOW — acceptable for MVP; install can be re-triggered.
 
 ### 3. Underspecification Detection
 
-**Finding U001** [MEDIUM]: Progress reporting mechanism is underspecified. spec.md FR-002 requires "report installation progress through multiple stages" and plan.md mentions "worker event system (Feature 016 pattern)" but tasks.md has no task for the SSE/WebSocket/polling transport layer. T006 (GET /api/servers/:id/vpn/status) implies polling, but polling interval, retry strategy, and real-time behavior are not specified. SC-003 requires updates within 5 seconds — is polling sufficient?
-
-**Finding U002** [LOW]: No error taxonomy defined. spec mentions "human-readable error message" (SC-004) and multiple failure modes (SSH failure, disk space, package conflict, config extraction failure) but no structured error codes or error message format is specified. T019 verifies error handling exists but doesn't specify what "correct" looks like.
-
-**Finding U003** [LOW]: Missing research.md, data-model.md, contracts/ — plan.md lists these as documentation files but they weren't created. Plan's project structure shows `research.md`, `data-model.md`, `quickstart.md`, `contracts/vpn-install.md` but these don't exist on disk. Not blocking for analyze (they're optional supplements) but their absence means the encryption schema, API contracts, and Amnezia CLI investigation are not documented.
+- **SC-003 (progress updates within 5 seconds)**: No task explicitly verifies or implements this latency requirement. Polling mechanism described but polling interval unspecified. LOW — frontend polling interval is an implementation detail.
+- **SC-004 (error message within 10 seconds)**: No task covers this measurable outcome. T019 verifies error handling exists but not the 10-second latency bound. LOW — error propagation is near-instant via the worker event system.
+- **Encryption verification**: FR-004 (encrypted at rest) covered by T001 and T007, but no task verifies stored value is actually ciphertext (not plaintext). LOW — assumes correct implementation of AES-256-GCM pattern.
 
 ### 4. Constitution Alignment
 
 | Principle | Status | Notes |
 |-----------|--------|-------|
-| I. Operator safety first | PASS | Non-destructive install; retry on failure |
-| II. Secrets never leak | PASS | VPN config encrypted at rest; SSH keys already encrypted |
-| III. Reviewable database changes | PASS | T001 generates .sql migration for review |
-| IV. Typed boundaries | PASS | Zod validation mentioned for config extraction |
-| V. Feature flags and rollback posture | PASS | vpnStatus="error" isolates failure; existing servers unaffected |
-| VI. Independent review gate | DEFERRED | This analyze report is part of the gate |
+| I. Operator safety first | PASS | Install is non-destructive; retry on failure; reinstall confirmation prompt |
+| II. Secrets never leak | PASS | VPN config encrypted at rest (AES-256-GCM); decrypted only at delivery time; QR generated client-side |
+| III. Reviewable database changes | PASS | Migration .sql in T001 |
+| IV. Typed boundaries | PASS | VpnInstallStage enum in data-model.md; Zod validation mentioned in plan.md |
+| V. Feature flags and rollback posture | PASS | vpnStatus field exists; failure sets "error" without cascade |
+| VI. Independent review gate | DEFERRED | Noted in plan.md |
 | VII. Snapshot stages | N/A | No snapshot tooling |
+
+No constitution MUST violations detected.
 
 ### 5. Coverage Gaps
 
-- FR-001 (execute install) → T002 + T004 ✓
-- FR-002 (progress reporting) → T006 + T010 (partial — transport underspecified, see U001)
-- FR-003 (extract config) → T004 ✓
-- FR-004 (encrypted storage) → T001 + T004 ✓
-- FR-005 (download UI) → T008 + T012 + T014 ✓
-- FR-006 (QR code UI) → T009 + T013 + T014 ✓
-- FR-007 (vpnStatus lifecycle) → T004 + T005 ✓
-- FR-008 (retry) → T019 ✓ (implicit in error handling)
-- FR-009 (reinstall warning) → T020 ✓
-- SC-001 through SC-005 → T016-T020 ✓
+**FR-to-Task mapping** (all FRs covered):
+
+| FR | Tasks | Coverage |
+|----|-------|----------|
+| FR-001 | T002, T004, T005 | OK |
+| FR-001b | T004, T005, T006, T006a | OK |
+| FR-002 | T004, T006 | OK |
+| FR-003 | T002, T004 | OK |
+| FR-004 | T001, T007 | OK |
+| FR-005 | T008, T012 | OK |
+| FR-006 | T003, T009, T013 | OK |
+| FR-007 | T004, T005 | OK |
+| FR-008 | T005, T019 | OK |
+| FR-009 | T010, T020 | OK |
+
+**Orphan tasks** (no direct FR): T011, T014, T015 — integration/glue tasks serving multiple FRs. Acceptable.
+
+**Missing task coverage for Success Criteria**: SC-003 and SC-004 have no verification tasks measuring their specific latency bounds. LOW — functional coverage exists; specific latency bounds are NFR territory.
 
 ### 6. Inconsistency Detection
 
-**Finding I001** [LOW]: tasks.md line 83: `T011 + T014 → T016, T017, T018` — but T016 (verify install end-to-end) should also depend on T008 (config download endpoint) since "config extraction" is part of the end-to-end flow. T016 description says "trigger → stages → config extraction → status=running" which implies config extraction, but the dependency graph only lists T011 + T014 as prerequisites.
-
-**Finding I002** [LOW]: T003 installs `qrcode` npm dependency but tasks.md doesn't mention who reviews/approves the new dependency. Standing orders require explicit approval for package installs. T003 should flag this.
+- **API URLs — RESOLVED**: `contracts/vpn-install.md` now defines `POST /api/servers/:id/vpn/install` returning `install_id` (line 20) and `GET /api/servers/:id/vpn/install-status/:install_id` (line 43). These match FR-001b, T005, and T006 exactly. Previous HIGH finding (A01) is FIXED.
+- **QR endpoint — RESOLVED**: `contracts/vpn-install.md` no longer contains any QR endpoint. Clean — only has install trigger, install-status poll, and config download. Previous finding (A04) is FIXED.
+- **Stage name drift**: FR-002 lists human-facing labels (connecting, installing, configuring, extracting, complete). T002/data-model define machine-parseable tokens (installing_deps, configuring_server, generating_config, extracting_config, done). Mapping is implicit but consistent — FR-002 labels correspond to T002 stages in order. LOW — no functional conflict.
+- **T002 lane assignment**: T002 (shell script) grouped under Lane 2 `[FE][SETUP]` alongside T003. T002 should be [BE] or [SETUP]. LOW — does not block implementation.
 
 ### 7. Agent Routing Validation
 
-- T001 [DB]: Correct — database migration
-- T002 [BE]: Correct — shell script creation (could argue [OPS] but [BE] is fine for server-side scripts)
-- T003 [SETUP]: Correct — dependency installation
-- T004-T009 [BE]: Correct — backend worker and API endpoints
-- T010-T015 [FE]: Correct — frontend components and API layer
-- T016-T020 verification tasks: T016/T019/T020 tagged [BE], T017/T018 tagged [FE] — correct split
-
-Missing: No [SEC] task for validating encryption implementation. T007 handles encryption/decryption but isn't tagged for security review.
+- **Tags**: T001 [DB], T003 [FE][SETUP], T004-T009 [BE], T010-T015 [FE], T016-T020 (verification). T002 has no explicit tag — minor.
+- **Dependency graph**: Validated — no circular dependencies, all task IDs exist, no orphans. Fan-in uses `+`, fan-out uses `,`. Mermaid diagram matches text description. Self-validation checklist all checked.
+- **Critical path**: T001 → T004 → T005 → T010 → T011 → T016 (6 tasks). Correctly stated.
+- **T008→T013 dependency**: Confirmed T008 → T013 exists in dep graph (line 80: `T008 → T012, T013`). Previous graph error (T009→T013) is FIXED.
 
 ---
 
@@ -77,25 +85,26 @@ Missing: No [SEC] task for validating encryption implementation. T007 handles en
 
 | ID | Severity | Category | Summary |
 |----|----------|----------|---------|
-| A001 | MEDIUM | Ambiguity | VPN config access lifecycle not fully specified (rotation, access control) |
-| A002 | LOW | Ambiguity | Amnezia CLI headless install capability unvalidated |
-| A003 | LOW | Ambiguity | Config format detection logic implicit |
-| U001 | MEDIUM | Underspecification | Progress reporting transport mechanism not specified (polling vs SSE/WS) |
-| U002 | LOW | Underspecification | No structured error taxonomy for install failures |
-| U003 | LOW | Underspecification | Optional docs (research.md, data-model.md, contracts/) listed in plan but not created |
-| I001 | LOW | Inconsistency | T016 dependency graph may be missing T008 prerequisite |
-| I002 | LOW | Inconsistency | T003 new dependency install needs explicit approval per standing orders |
+| A02 | LOW | Inconsistency | Stage name drift: FR-002 uses human labels, T002 uses machine tokens. Implicit mapping, no explicit table. |
+| A03 | LOW | Agent Routing | T002 (bash script) in [FE][SETUP] lane. Should be [BE] or untagged setup. |
+| A06 | LOW | Underspecification | `$GENERATED_CONFIG` / `$GENERATED_WG_CONFIG` in T002 never defined. |
+| A07 | LOW | Underspecification | No task verifies SC-003 (5s progress) or SC-004 (10s error) latency bounds. |
 
-**Counts**: CRITICAL: 0 | HIGH: 0 | MEDIUM: 2 | LOW: 6
+**Counts**: CRITICAL: 0 | HIGH: 0 | MEDIUM: 0 | LOW: 4
 
 ---
 
-## Cross-Artifact Consistency
+## Remediation History
 
-- spec → plan: Mostly aligned. Plan extends spec with technical decisions.
-- plan → tasks: Aligned. Tasks decompose plan into phases correctly.
-- spec → tasks: Aligned with gaps noted in U001 (progress transport).
-- Dependency graph: Valid structure, minor gap in I001.
+| Original ID | Severity | Resolution |
+|-------------|----------|------------|
+| F1 (antigravity) | HIGH | Async SSH with keep-alive — FR-001b added, plan.md Async Architecture section added, T004/T006a specify keep-alive params and timeout. Verified consistent. |
+| F2 (antigravity) | MEDIUM | Client-side QR — FR-006 updated, T003/T009/T013 aligned. Contracts and task descriptions fully updated. |
+| F3 (antigravity) | MEDIUM | Deterministic SCP paths — T002 specifies `cp -f` to `/tmp/amnezia-export.vpn` and `/tmp/amnezia-wg.conf`. Verified consistent. |
+| F4 (antigravity) | LOW | Stage marker format — T002 specifies `[STAGE: <stage_name>]` with regex and valid stage list. Verified consistent. |
+| A01 (analyze v1) | HIGH | API URL mismatch — contracts/vpn-install.md now matches spec/tasks: POST returns `install_id`, status endpoint is `GET /api/servers/:id/vpn/install-status/:install_id`. FIXED. |
+| A04 (analyze v1) | MEDIUM | Contracts QR endpoint — removed. contracts/vpn-install.md no longer has any QR endpoint. FIXED. |
+| A05 (analyze v1) | LOW | T007 QR reference + T015 `getConfigQR()` — T007 now says "config decryption helper, format detection"; T015 now lists `triggerInstall()`, `getInstallStatus()`, `downloadConfig()`. FIXED. |
 
 ---
 
@@ -104,8 +113,14 @@ Missing: No [SEC] task for validating encryption implementation. T007 handles en
 ```yaml
 verdict: PASS
 reviewer: analyze
-reviewed_at: "2026-05-24T00:00:00Z"
-commit: HEAD
+reviewed_at: "2026-05-24T15:00:00Z"
+commit: 7324438
+critical_count: 0
+high_count: 0
+medium_count: 0
+low_count: 4
+notes: >
+  All previous HIGH and MEDIUM findings resolved. Spec is internally consistent.
+  Four LOW findings remain (stage name drift, lane assignment, undefined shell
+  variables, unmeasured latency SCs) — none blocking. Ready for implementation.
 ```
-
-**Rationale**: No CRITICAL or HIGH findings. Two MEDIUM findings (config lifecycle ambiguity, progress transport underspecification) are addressable during implementation. The feature builds on established patterns (Feature 016 worker, existing encryption) and the task decomposition is sound. Recommend documenting progress transport decision (polling interval/strategy) before Phase 4.

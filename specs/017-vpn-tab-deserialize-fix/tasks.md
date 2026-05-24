@@ -11,7 +11,8 @@
 
 ## Phase 2: Verification
 
-- [ ] T002 [BE] Verify VPN tab loads correctly with VPN-flagged servers
+- [ ] T002 [BE] Verify VPN tab loads correctly with VPN-flagged servers. Code must use res.json(rows ?? []) — never pass potentially null/undefined rows directly
+- [ ] T002b [BE] Grep entire codebase for `/api/servers/vpn` consumers (server, client, scripts, tests). Confirm only `client/lib/vpn-api.ts` consumes this endpoint. If other consumers exist, update them to expect array
 - [ ] T003 [BE] Verify empty state renders gracefully when no VPN servers exist
 
 ---
@@ -20,7 +21,7 @@
 
 ### Dependencies
 
-T001 → T002, T003
+T001 → T002, T002b, T003
 
 ### Self-Validation Checklist
 
@@ -37,6 +38,7 @@ T001 → T002, T003
 ```mermaid
 graph LR
     T001 --> T002
+    T001 --> T002b
     T001 --> T003
 ```
 

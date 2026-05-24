@@ -78,6 +78,8 @@ client/
 - Azure OpenAI uses different URL pattern: `{resource}.openai.azure.com/openai/deployments/{deployment}`
 - Both patterns can be handled by a single `baseURL` field
 
+(**DEFERRED** — Azure OpenAI is out of scope for this spec; requires dedicated `azure-openai` provider type)
+
 ### Anthropic Custom BaseURL
 - `@ai-sdk/anthropic` supports custom `baseURL` via constructor option
 - Useful for Anthropic API proxies or regional endpoints
@@ -86,6 +88,14 @@ client/
 - Send a minimal chat completion request (e.g., "Hi" with max_tokens=1)
 - Parse response for success/error
 - Return pass/fail with latency measurement
+
+### URL Validation Layer (SSRF Protection)
+- Validation runs at TWO points:
+  - (a) On POST/PATCH of provider config (upload-time, fast-fail) — reject private IPs, localhost, link-local
+  - (b) Immediately before each outbound fetch call (run-time, defense against DB tampering + DNS rebinding) — resolve hostname → IP → check against denylist BEFORE fetch
+- Helper module: `server/lib/url-validator.ts`
+- Dependencies: `is-private-ip` + `ipaddr.js` for parsing, `dns.promises.lookup` for hostname resolution
+- Override: `ALLOW_LOCAL_AI_ENDPOINTS=true` env var. When active, each request through a local endpoint emits an audit entry.
 
 ## Complexity Tracking
 

@@ -97,6 +97,7 @@ All delete and restore actions are logged in an audit trail visible to administr
 - What happens if the server is involved in an active deployment when deletion is attempted? — Block deletion and show a warning: "Cannot delete server with active deployments. Stop all deployments first."
 - What happens if the finalization cron fails mid-cascade? — Implement transactional cascade; partial deletions roll back; retry on next cron run.
 - What happens if a restored server's name conflicts with a new server created after deletion? — Allow duplicate names (name is not unique constraint); or show warning during restore.
+- What happens if a user soft-deletes a server and wants to re-add a server with the same IP/name (e.g., after OS reinstall)? — Partial unique indexes (`WHERE deletedAt IS NULL`) allow re-adding the same IP/name. The soft-deleted row coexists with the new active row. This is the intended behavior.
 
 ## Requirements *(mandatory)*
 

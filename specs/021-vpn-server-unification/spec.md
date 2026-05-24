@@ -94,6 +94,10 @@ A developer can add a new server type (e.g., k8s, proxmox) by updating a schema 
 
 - **FR-001**: System MUST expose a single unified server list endpoint: `GET /api/servers` with optional `?kind=vpn|general|all` query parameter.
 - **FR-002**: System MUST store an explicit `kind` enum column on the `servers` table. Kind synchronization rules: (1) When VPN is installed on a server (vpnStatus transitions from NULL to non-NULL), `kind` MUST auto-update to `vpn`. (2) When VPN is removed from a server (vpnStatus transitions from non-NULL to NULL), `kind` MUST revert to `general`. (3) For future types (k8s, proxmox), the install/remove lifecycle for each type must similarly update `kind`. The `kind` column is the source of truth for server classification; `vpnStatus` is the source of truth for VPN operational state. Both must stay consistent via application-level guards on every write that modifies `vpnStatus` or equivalent type-specific columns.
+- **FR-002a (Kind Transition Rules)**: Kind transitions are controlled:
+  - `standard → vpn`: Requires initiating VPN install flow (sets `vpnStatus='installing'`, all VPN fields optional but expected to populate during install).
+  - `vpn → standard`: Requires explicit user confirmation modal — "This will clear all VPN credentials and config. Continue?" — backend transaction sets `vpnStatus=NULL` and `UPDATE servers SET vpnConfig=NULL, vpnPubkey=NULL, vpnEndpoint=NULL, vpnInstalledAt=NULL WHERE id=?`. NO silent drop — kind change is an explicit destructive action when downgrading.
+  - Direct manual kind changes via API/DB are NOT allowed. Kind is always derived from the install/remove lifecycle.
 - **FR-003**: System MUST retire the separate `GET /api/servers/vpn` endpoint (merge into unified endpoint).
 - **FR-004**: Client MUST use a single React Query cache with filter-aware key: `["servers", { kind }]`.
 - **FR-005**: Client MUST retire duplicate React Query hooks from `client/lib/vpn-api.ts` (merge into unified hook).

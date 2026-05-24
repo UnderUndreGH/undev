@@ -7,7 +7,7 @@
 
 **Purpose**: Migration files for soft-delete column and audit entries table
 
-- [ ] T001 [DB] Generate migration `server/db/migrations/019-add-deleted-at.sql` — add `deletedAt` column to `servers` table + partial index
+- [ ] T001 [DB] Generate migration `server/db/migrations/019-add-deleted-at.sql` — add `deletedAt` column to `servers` table, create partial index `WHERE "deletedAt" IS NOT NULL` for archived view, drop existing unique constraints on `servers.ip` and `servers.name`, replace with partial unique indexes `idx_servers_ip_active ON servers(ip) WHERE "deletedAt" IS NULL` and `idx_servers_name_active ON servers(name) WHERE "deletedAt" IS NULL`
 - [ ] T002 [DB] Generate migration `server/db/migrations/019-create-audit-entries.sql` — create `audit_entries` table with indexes
 - [ ] T003 [DB] Update Drizzle schema in `server/db/schema.ts` — add `deletedAt` field to servers schema, add audit_entries schema
 
@@ -31,6 +31,9 @@
   - T006i: Any search/filter endpoints that query the `servers` table — exclude soft-deleted
   - NOTE: Admin endpoints and the archived-servers endpoint (`GET /api/servers/archived`) intentionally DO NOT apply this filter
 - [ ] T006v [BE][SEC] Verification: After all T006a-T006i changes, grep the entire codebase for `from(servers)` / `serversTable` references that do NOT include `.where(isNull(deletedAt))` or equivalent. Confirm zero matches outside of admin/audit/archived endpoints. Document results in PR description
+- [ ] T006j [BE] Audit ALL Drizzle `db.query.<entity>.findMany({ with: { server: ... } })` usages — list every call site, determine if soft-delete filter is needed
+- [ ] T006k [BE] Audit ALL `.innerJoin/leftJoin(servers, ...)` patterns — list every call site, determine if soft-delete filter is needed
+- [ ] T006l [BE] Apply `where: isNull(servers.deletedAt)` filters consistently to all relational queries and joins identified in T006j and T006k. Document the policy in code comments.
 - [ ] T007 [BE] Modify `DELETE /api/servers/:id` in `server/routes/servers.ts` — accept `{ confirmName }` body, validate name match, check for active deployments, set `deletedAt`, create audit entry
 - [ ] T008 [BE] Implement `POST /api/servers/:id/restore` in `server/routes/servers.ts` — clear `deletedAt`, create audit entry
 - [ ] T009 [BE] Implement `GET /api/servers/archived` in `server/routes/servers.ts` — return soft-deleted servers with computed `remainingDays` and `approachingDeadline`
@@ -42,6 +45,7 @@
 **Purpose**: Background process for permanent deletion after grace period
 
 - [ ] T010 [BE] Implement `server/workers/server-finalizer.ts` — select servers where `deletedAt < NOW() - 30 days`, cascade-delete in transaction, create audit entries, log results
+- [ ] T010v [BE] Verify the 6 child tables (apps, deploys, backups, certs, health_checks, locks) all have `ON DELETE CASCADE` on their `server_id` FK. If any do not, the finalization worker must manually delete children in dependency order. Document findings in data-model.md.
 - [ ] T011 [BE][SEC] Implement `POST /api/admin/finalize-deleted` in `server/routes/servers.ts` — admin endpoint to trigger finalization manually. MUST include: (1) admin role auth middleware check, (2) trigger finalization worker, (3) audit entry recording admin actor, timestamp, and count of finalized servers
 
 ---
@@ -86,6 +90,9 @@ T001 + T002 + T003 → T004
 T004 → T007, T008, T009
 T005 → T007, T008, T010
 T006 → T007, T006v
+T006 → T006j, T006k
+T006j + T006k → T006l
+T006l → T006v
 T007 → T012
 T008 → T015
 T009 → T014

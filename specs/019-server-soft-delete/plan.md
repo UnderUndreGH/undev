@@ -85,6 +85,16 @@ client/
 - All existing queries get `WHERE deletedAt IS NULL` filter (via Drizzle query modifier)
 - Archived queries use `WHERE deletedAt IS NOT NULL`
 
+### Query Layer — Relational and Join Audit
+All Drizzle relational queries (`db.query.<entity>.findMany({ with: { server: ... } })`) and explicit joins (`.innerJoin/leftJoin(servers, ...)`) MUST be audited for soft-delete awareness.
+
+**Policy**: Related entities (e.g., App, Deploy, Backup) whose parent server is soft-deleted SHOULD be hidden from non-admin queries. For each relation:
+- If the relation includes `with: { server: ... }`, add `where: isNull(servers.deletedAt)` to the nested `with:` clause
+- If the relation uses `.innerJoin(servers, ...)`, add `andWhere(isNull(servers.deletedAt))` to the join condition
+- Admin endpoints and audit queries are exempt from this filter
+
+This ensures soft-deleted servers don't leak through relational queries.
+
 ### Cascade Analysis (6 related tables)
 1. `apps` — CASCADE on server delete
 2. `deploys` — CASCADE on app delete (transitive)

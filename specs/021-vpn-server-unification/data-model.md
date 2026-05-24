@@ -3,6 +3,10 @@
 **Date**: 2025-05-24
 **Spec**: 021-vpn-server-unification
 
+## Assumption: vpnStatus Scope
+
+The `vpnStatus` column is exclusively used for servers running self-hosted VPN (Amnezia, WireGuard). It is NEVER set for general application servers that happen to be VPN clients (e.g., a backend server using VPN to reach a database). The migration query `UPDATE servers SET kind='vpn' WHERE vpnStatus IS NOT NULL` is safe under this assumption. This was verified by auditing all `vpnStatus` write paths — only the Amnezia install flow (Features 016/018) sets this field.
+
 ## Schema Changes
 
 ### `servers` table — add `kind` column
@@ -41,6 +45,21 @@ The `kind` column stays synchronized with type-specific status columns via appli
 **Implementation**: Every route handler that modifies `vpnStatus` (or future type columns) MUST also update `kind` in the same transaction. No async/batch sync — immediate, transactional consistency.
 
 **Validation guard**: A write-time check ensures `kind = 'vpn'` requires `vpnStatus IS NOT NULL`. If violated, the write fails with a clear error. This prevents kind/vpnStatus drift.
+
+## Kind Transition State Diagram
+
+```
+[general] --(install VPN)--> [vpn]
+[vpn] --(remove VPN + confirm)--> [general]
+
+Rules:
+- general→vpn: Only via VPN install action. Sets vpnStatus='installing', kind='vpn'.
+- vpn→general: Only via explicit "Remove VPN" action with user confirmation. Transaction:
+  1. Verify user confirmation received
+  2. SET vpnStatus=NULL, vpnConfig=NULL, vpnPubkey=NULL, vpnEndpoint=NULL, vpnInstalledAt=NULL
+  3. SET kind='general'
+  No silent drops. Kind is always derived from lifecycle, never manually set.
+```
 
 ## Query Patterns
 

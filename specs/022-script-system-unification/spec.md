@@ -100,10 +100,11 @@ Before executing a script, the system verifies its hash/signature matches what w
 
 ### Edge Cases
 
-- What happens if the JSON Schema ↔ Zod conversion produces a different validation result? — Use `zod-to-json-schema` for forward conversion (lossy but safe) and `json-schema-to-zod` for back-conversion. Test round-trip fidelity for common parameter types.
+- What happens if ajv validation fails on user input? — Return specific validation errors from ajv to the user with field-level error messages. No conversion or eval involved.
 - What happens if a script upload is interrupted mid-write? — Atomic write: write to temp file, hash, move to final location. Never leave partial scripts.
-- What happens if the sandbox (firejail/bubblewrap/landlock) is not available on the target server? — Log a warning; execute without sandboxing but flag in audit log. Do NOT block execution — but make the security gap visible.
+- What happens if the sandbox (firejail/bubblewrap) is not available on the target server? — Script execution endpoints return 503 Service Unavailable. Application refuses to expose script execution if sandbox tooling is missing. fail-CLOSED. Admin must install sandbox tooling before the feature can be used.
 - What happens if `VPN_SCRIPTS_ROOT` directory is writable by non-admin users? — RBAC enforcement MUST check directory permissions at startup and refuse to start if insecure. Log a critical warning.
+- What happens if a script parameter contains a secret (password, API key)? — Parameters annotated with `{secret: true}` in their JSON Schema `x-*` extension are redacted in audit entries. The `# @param` parser supports `{secret}` modifier: `# @param password:string:{secret} "Server password"`. Audit entries show `password: "***REDACTED***"` for such parameters.
 
 ## Requirements *(mandatory)*
 
@@ -111,12 +112,12 @@ Before executing a script, the system verifies its hash/signature matches what w
 
 - **FR-001**: System MUST accept `.sh` script uploads from admin users only.
 - **FR-002**: System MUST parse script parameters from `# @param` annotations and store as JSON Schema in the database.
-- **FR-003**: System MUST convert JSON Schema to Zod at runtime via `json-schema-to-zod` for parameter validation (never store or eval raw Zod strings). **Fallback strategy**: If JSON Schema → Zod conversion fails or roundtrip fidelity is lost (detected by validating a known-good test input against the re-converted schema), the system MUST: (a) reject the script at upload with a clear error message to the admin indicating which JSON Schema construct couldn't be converted, OR (b) downgrade to `# @param` parser with a logged WARNING. NEVER silently succeed with degraded validation. The upload endpoint MUST test roundtrip fidelity before accepting the script.
-- **FR-004**: System MUST scan uploaded script content for dangerous patterns: `rm -rf /`, `curl | bash`, `eval`, `exec`, network exfiltration patterns, fork bombs.
+- **FR-003**: System MUST validate user-provided script parameters against the stored JSON Schema using `ajv` (Another JSON Schema Validator) — a battle-tested JSON Schema validator that validates directly without eval. At UPLOAD time, system parses `# @param` annotations from `.sh` into JSON Schema via a custom parser (one-way, no codegen, no eval). At EXECUTION time, parameter values are validated against the stored JSON Schema using `ajv.compile(schema)(input)`. Zod is NOT used for any dynamic schema validation in this feature. `eval()` is NEVER invoked. `json-schema-to-zod` is NOT a dependency.
+- **FR-004**: System SHOULD warn admin on upload if script contains suspicious patterns (advisory only — does NOT block upload or execution). Scanner detects: `rm -rf /`, `curl | bash`, `eval`, `exec`, network exfiltration patterns, fork bombs. Admin sees warning but can proceed. **The sandbox (FR-008) is the ONLY security boundary.**
 - **FR-005**: System MUST enforce RBAC for script CRUD: admin-only upload/update/delete; all authenticated users may execute.
 - **FR-006**: System MUST audit every upload, update, delete, and execute event with actor, timestamp, script identity, and action.
 - **FR-007**: System MUST hash scripts at upload time (SHA-256) and verify hash before execution.
-- **FR-008**: System MUST support sandboxed script execution (investigate firejail, bubblewrap, or landlock for syscall-level confinement).
+- **FR-008**: Script execution MUST run inside firejail or bubblewrap sandbox with: read-only root filesystem except `/tmp` and a designated work directory, dropped capabilities (no CAP_SYS_ADMIN etc.), no network access by default (override via per-script flag with admin approval), CPU+memory limits enforced via cgroups, kill timeout 10 minutes default. The sandbox is the SOLE security boundary for script execution.
 - **FR-009**: System MUST retain `# @param` parser as fallback for legacy scripts without JSON Schema definitions.
 - **FR-010**: System MUST validate `VPN_SCRIPTS_ROOT` directory permissions at startup — refuse to start if writable by non-admin.
 - **FR-011**: Existing Feature 005 hardcoded scripts MUST continue to work during and after migration.
@@ -125,7 +126,7 @@ Before executing a script, the system verifies its hash/signature matches what w
 ### Key Entities
 
 - **Script**: An executable script file with metadata — name, description, parameter schema (JSON Schema), content hash, upload timestamp, uploader.
-- **Script Parameter Schema**: JSON Schema definition of a script's parameters, stored in the database, converted to Zod at runtime for validation.
+- **Script Parameter Schema**: JSON Schema definition of a script's parameters, stored in the database, validated at runtime using ajv.
 - **Audit Entry**: Records all script lifecycle events — upload, update, delete, execute, integrity-check-failure — with actor, timestamp, script identity, and relevant details.
 - **Sandbox Configuration**: Per-execution sandbox policy — allowed syscalls, resource limits, network restrictions.
 
@@ -134,14 +135,14 @@ Before executing a script, the system verifies its hash/signature matches what w
 ### Measurable Outcomes
 
 - **SC-001**: A newly uploaded script with `# @param` annotations is parsed, stored, and executable within 30 seconds of upload.
-- **SC-002**: Zero dangerous scripts pass the content scanner (100% rejection rate for patterns in the denylist).
+SC-002: Advisory scanner warns on 100% of detected dangerous patterns (warns but does not block — sandbox is the security boundary).
 - **SC-003**: All existing Feature 016 scripts execute with identical behavior after unification (zero regressions).
 - **SC-004**: Audit trail captures 100% of script CRUD and execution events.
 - **SC-005**: Hash verification detects 100% of on-disk script tampering attempts.
 
 ## Assumptions
 
-- `zod-to-json-schema` and `json-schema-to-zod` packages exist and support common parameter types (string, number, boolean, enum, array).
+- `ajv` and `ajv-formats` packages are used for JSON Schema validation at execution time. `zod-to-json-schema` may be used ONE-TIME during migration (Feature 005 Zod→JSON Schema conversion) but is NOT a runtime dependency.
 - Sandboxing tools (firejail, bubblewrap, landlock) are available on target Ubuntu servers or can be installed as dependencies.
 - The `VPN_SCRIPTS_ROOT` directory can be secured with appropriate filesystem permissions (owned by deploy user, not world-writable).
 
@@ -155,7 +156,7 @@ Before executing a script, the system verifies its hash/signature matches what w
 
 ### Security Vectors That MUST Be Closed
 
-1. **Content Scanner for Dangerous Bash Patterns**: The current `# @param` validation lets ANY bash content pass execution. A content scanner MUST reject scripts containing:
+1. **Content Scanner for Dangerous Bash Patterns**: The current `# @param` validation lets ANY bash content pass execution. An advisory pattern scanner SHOULD warn admins about scripts containing:
    - `rm -rf /` and variants (`rm -rf /*`, `rm -rf ~`)
    - `curl | bash`, `wget | sh` and any remote-code-execution pipe patterns
    - `eval`, `exec` with variable arguments
@@ -168,7 +169,7 @@ Before executing a script, the system verifies its hash/signature matches what w
    - **Layer 2 — AST-based analysis**: Parse bash scripts using `bashlex` (Python) or `tree-sitter-bash` (WASM/Node) to detect: variable indirection (`a="rm"; $a -rf /`), command substitution within eval/exec, heredoc-based evasion, and dynamically constructed commands. If AST parsing fails on a script, REJECT the script — do not fall back to regex-only scanning for unparsable scripts.
    - **Layer 3 — Regex denylist**: Pattern-match the normalized content against the denylist above. Catches obvious patterns quickly even if AST analysis misses edge cases.
    - **Layer 4 — Indirection denylist**: Flag scripts containing patterns commonly used for obfuscation even if the target command isn't directly visible: variable expansion in command position (`${var}`), `printf` to construct commands, `declare`/`typeset` with function names, associative arrays used as dispatch tables.
-   - **Policy**: If ANY layer flags a pattern, the script is rejected. No "maybe" — reject and require admin manual review.
+   - **Policy**: If ANY layer flags a pattern, the admin is WARNED but can proceed to upload.
 
 2. **`VPN_SCRIPTS_ROOT` Writability RBAC**: If an attacker can write into this directory, all prior script-upload protection is bypassed — they gain full RCE on every script execution. Requirements:
    - Directory MUST be owned by the deploy user
@@ -185,7 +186,7 @@ Before executing a script, the system verifies its hash/signature matches what w
 4. **Sandboxed Execution**: Scripts currently run on VPS with full deploy-user privileges. Requirements:
    - Investigate firejail, bubblewrap, or landlock for syscall-level confinement
    - Default-deny: block network access, filesystem writes outside designated paths, and privileged syscalls
-   - If sandboxing is unavailable on a target server, log a WARNING and flag in audit — do NOT silently execute without sandbox
+   - If sandbox initialization fails OR sandbox tooling (firejail/bubblewrap) is not installed on the server, script execution MUST be blocked. fail-CLOSED. Pre-flight check at application startup: if sandbox tooling missing, application logs critical error and refuses to expose script execution endpoints (returns 503 Service Unavailable on POST /api/scripts/:id/execute). Admin must install sandbox tooling before script execution feature becomes usable.
    - Document minimum kernel version requirements for chosen sandboxing technology
 
 ### Sign-Off Required

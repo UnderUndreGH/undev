@@ -40,7 +40,7 @@ A user wants to use OpenRouter or Azure OpenAI as their provider. They enter the
 **Acceptance Scenarios**:
 
 1. **Given** the user has an OpenRouter API key, **When** they add an "OpenAI-Compatible" provider with OpenRouter's base URL and a model ID, **Then** test connectivity succeeds and chat works.
-2. **Given** the user has Azure OpenAI credentials, **When** they configure the Azure endpoint URL with deployment name as model, **Then** the system connects and processes requests.
+2. ~~**Given** the user has Azure OpenAI credentials~~ — **DEFERRED**: Azure OpenAI requires a dedicated provider type (separate auth model). Will be addressed in a future spec.
 
 ---
 
@@ -71,8 +71,9 @@ A user running an Anthropic-compatible proxy or enterprise gateway wants to use 
 ### Functional Requirements
 
 - **FR-001**: System MUST support a new provider type "OpenAI-Compatible" that accepts a custom base URL.
-- **FR-002**: System MUST allow empty/optional API keys for OpenAI-Compatible providers (local endpoints).
+- **FR-002**: System MUST allow empty/optional API keys for OpenAI-Compatible providers (local endpoints). API key is OPTIONAL for openai-compatible providers — some local endpoints (LM Studio, Ollama) accept any value or empty string. UI displays apikey field as optional with help text "Required for cloud providers, optional for local". `api_key_encrypted` column is nullable.
 - **FR-003**: System MUST validate the base URL format when saving provider configuration.
+- **FR-003a (SSRF Protection)**: `endpointUrl` MUST be validated against a denylist of private/internal addresses. Block: IPv4 private ranges (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16), link-local (169.254.0.0/16, fe80::/10), loopback (127.0.0.0/8, ::1), CGNAT (100.64.0.0/10), and DNS hostnames resolving to any of the above (re-validate at request time, not just config time, to prevent DNS rebinding). Reject `localhost`, `*.local`, `*.internal`. Override available via `ALLOW_LOCAL_AI_ENDPOINTS=true` server env var with mandatory audit log entry per request when the override is in effect.
 - **FR-004**: System MUST support custom base URL for existing Anthropic provider type.
 - **FR-005**: System MUST include a "Test Connectivity" action for custom providers that sends a lightweight request and reports success/failure.
 - **FR-006**: System MUST encrypt API keys at rest using AES-256-GCM (same as existing provider keys).
@@ -96,4 +97,5 @@ A user running an Anthropic-compatible proxy or enterprise gateway wants to use 
 
 - The `@ai-sdk/openai-compatible` package (or equivalent) supports custom base URLs and is compatible with the existing Vercel AI SDK integration.
 - Azure OpenAI uses a slightly different URL pattern (`/openai/deployments/{deployment}`) that the OpenAI-compatible SDK handles or can be configured for.
+- **Azure OpenAI is OUT OF SCOPE for this spec.** The `openai-compatible` type targets OpenAI-API-compatible servers using standard `Authorization: Bearer` auth (OpenAI, OpenRouter, vLLM, LM Studio, Ollama with OpenAI-compat mode, llama.cpp server). Azure OpenAI support requires a separate `azure-openai` provider type using `@ai-sdk/azure` with `resourceName`+`apiKey`+`apiVersion` fields — deferred to future spec. Users attempting Azure OpenAI URLs will receive a helpful error message directing them to the future provider type.
 - Budget controls and rate limiting apply identically to custom providers.

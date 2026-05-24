@@ -8,8 +8,8 @@
 **Purpose**: Database migration for VPN config storage, install script skeleton
 
 - [ ] T001 [DB] Add `vpn_config_encrypted` and `vpn_config_format` columns to `servers` table — generate migration `.sql` file in `server/db/migrations/018-add-vpn-config-column.sql`
-- [ ] T002 [BE] Create install script `server/scripts/install-amnezia.sh` — SSH-target script with stage markers: connecting, installing, configuring, extracting
-- [ ] T003 [SETUP] Add `qrcode` npm dependency to server package (for QR code generation)
+- [ ] T002 [BE] Create install script `server/scripts/install-amnezia.sh` — SSH-target script with stage markers: connecting, installing, configuring, extracting. Script MUST end with deterministic copy commands: `cp -f "$GENERATED_CONFIG" /tmp/amnezia-export.vpn` and `cp -f "$GENERATED_WG_CONFIG" /tmp/amnezia-wg.conf`. Worker SCPs from these known paths. Stage markers use format: `[STAGE: <stage_name>]` (regex: `^\[STAGE: ([a-z_-]+)\]( .*)?$`). Valid stages: `installing_deps`, `configuring_server`, `generating_config`, `extracting_config`, `done`. Worker parses stdout lines matching this pattern.
+- [ ] T003 [FE][SETUP] Add `react-qr-code` (or `qrcode.react`) npm dependency to CLIENT package
 
 ---
 
@@ -17,10 +17,11 @@
 
 **Purpose**: Worker that runs install script on remote server, API endpoints for trigger/status/config
 
-- [ ] T004 [BE] Implement `server/workers/amnezia-installer.ts` — SSH worker that uploads install script, executes it, captures stage output, extracts config file via SCP, encrypts and stores in `vpn_config_encrypted`
-- [ ] T005 [BE] Implement `POST /api/servers/:id/vpn/install` in `server/routes/servers-vpn.ts` — validate server exists, check no active deployments, trigger worker, return 202
-- [ ] T006 [BE] Implement `GET /api/servers/:id/vpn/status` in `server/routes/servers-vpn.ts` — return current vpnStatus with stage detail
-- [ ] T007 [BE] Implement `server/lib/vpn-config.ts` — config decryption helper, format detection, QR code generation
+- [ ] T004 [BE] Implement `server/workers/amnezia-installer.ts` — SSH worker with keep-alive (ServerAliveInterval=30, ServerAliveCountMax=240), async execution — HTTP returns 202 with install_id immediately. Uploads install script, executes it, captures stage output, extracts config file via SCP, encrypts and stores in `vpn_config_encrypted`
+- [ ] T005 [BE] Implement `POST /api/servers/:id/vpn/install` — validate server exists, check no active deployments, trigger async worker, return 202 with `install_id`
+- [ ] T006 [BE] Implement `GET /api/servers/:id/vpn/install-status/:install_id` — return current vpnStatus with stage detail and progress percentage
+- [ ] T006a [BE] Add `AMNEZIA_INSTALL_TIMEOUT_MIN` env var configuration (default: 30 minutes). Worker hard-caps at this limit.
+- [ ] T007 [BE] Implement `server/lib/vpn-config.ts` — config decryption helper, format detection
 
 ---
 
@@ -29,7 +30,7 @@
 **Purpose**: Endpoints for downloading config file and QR code
 
 - [ ] T008 [BE] Implement `GET /api/servers/:id/vpn/config` in `server/routes/servers-vpn.ts` — decrypt config, serve as downloadable file with correct Content-Disposition
-- [ ] T009 [BE] Implement `GET /api/servers/:id/vpn/config/qr` in `server/routes/servers-vpn.ts` — decrypt config, generate QR code, return as data URL
+- [ ] T009 [BE] Drop server-side QR endpoint. Server returns decrypted config text via GET /api/servers/:id/vpn/config (already exists as T008). Client generates QR from the config text using react-qr-code library.
 
 ---
 
@@ -40,7 +41,7 @@
 - [ ] T010 [FE] Implement `client/components/vpn/InstallButton.tsx` — trigger install via POST, show confirm dialog if VPN already installed (reinstall), poll status for progress stages
 - [ ] T011 [FE] Add install trigger + progress display to server detail VPN section
 - [ ] T012 [FE] Implement `client/components/vpn/ConfigDownload.tsx` — download button for .conf/.vpn file
-- [ ] T013 [FE] Implement `client/components/vpn/ConfigQRCode.tsx` — display QR code modal for mobile scanning
+- [ ] T013 [FE] Implement `client/components/vpn/ConfigQRCode.tsx` — generate QR code from decrypted VPN config text using react-qr-code library, display as modal for mobile scanning
 - [ ] T014 [FE] Add config download + QR actions to server detail page when `vpnStatus="running"`
 
 ---
@@ -49,7 +50,7 @@
 
 **Purpose**: React Query hooks for install API
 
-- [ ] T015 [FE] Add `triggerInstall()`, `getInstallStatus()`, `downloadConfig()`, `getConfigQR()` to `client/lib/vpn-api.ts`
+- [ ] T015 [FE] Add `triggerInstall()`, `getInstallStatus()`, `downloadConfig()` to `client/lib/vpn-api.ts`
 
 ---
 
@@ -69,13 +70,14 @@
 
 T001 → T004
 T002 → T004
-T003 → T009
+T003 → T013
 T004 → T005, T006
+T004 → T006a
+T006a → T010
 T005 → T010
 T006 → T010
 T007 → T008, T009
-T008 → T012
-T009 → T013
+T008 → T012, T013
 T010 → T011
 T012 → T014
 T013 → T014
@@ -99,15 +101,17 @@ T005 → T019, T020
 graph LR
     T001 --> T004
     T002 --> T004
-    T003 --> T009
+    T003 --> T013
     T004 --> T005
     T004 --> T006
+    T004 --> T006a
+    T006a --> T010
     T005 --> T010
     T006 --> T010
     T007 --> T008
     T007 --> T009
     T008 --> T012
-    T009 --> T013
+    T008 --> T013
     T010 --> T011
     T012 --> T014
     T013 --> T014
@@ -128,7 +132,7 @@ graph LR
 | Lane | Agent Flow | Tasks | Blocked By |
 |------|-----------|-------|------------|
 | 1 | [DB] | T001 | — |
-| 2 | [SETUP] | T002, T003 | — |
+| 2 | [FE][SETUP] | T002, T003 | — |
 | 3 | [BE] core | T004 → T005, T006, T007 → T008, T009 | T001, T002 |
 | 4 | [FE] API | T015 | — |
 | 5 | [FE] UI | T010 → T011, T012 → T014, T013 → T014 | T005, T006, T015 |
@@ -176,4 +180,4 @@ graph LR
 - Config encryption uses existing AES-256-GCM pattern — no new crypto code
 - Install script must be idempotent — safe to re-run on partial install
 - Worker pattern from Feature 016 is reused — no new worker infrastructure
-- QR code generated server-side to avoid sending decrypted config to client when only QR needed
+- QR code generated client-side from decrypted config text using react-qr-code library — avoids sending decrypted config unnecessarily

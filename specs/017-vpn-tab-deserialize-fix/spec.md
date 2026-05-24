@@ -59,3 +59,4 @@ A user who has one or more servers with VPN features enabled navigates to the VP
 - This is a trivial one-line fix: change `res.json({ servers: rows })` to `res.json(rows)` in the VPN server list endpoint.
 - No migration or schema changes required.
 - Client code (`vpn-api.ts`) is correct in expecting an array — the server is the source of the mismatch.
+- **API Design Decision (Array-at-Root vs Envelope)**: We chose array-at-root (vs `{ servers: [] }` envelope) because (a) existing client code already expects array, (b) pagination is not needed at current scale (<1000 servers per user), (c) if pagination needed later, can wrap in envelope as breaking version bump `/api/v2/servers/vpn`.

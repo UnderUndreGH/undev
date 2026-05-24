@@ -38,10 +38,13 @@ CREATE TABLE vpn_configs (
 type VpnInstallStage =
   | "idle"         // no install in progress
   | "installing"   // install triggered (existing state)
+  | "installing_deps"   // Installing system packages
+  | "configuring_server" // Configuring Amnezia server
+  | "generating_config"  // Generating VPN configuration
+  | "extracting_config"  // Extracting config files
   | "connecting"   // SSH connecting
-  | "configuring"  // Amnezia being configured
-  | "extracting"   // Config being extracted
   | "running"      // Install complete (existing state)
+  | "done"         // All stages complete
   | "error";       // Install failed (existing state)
 ```
 

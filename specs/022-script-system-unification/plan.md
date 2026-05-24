@@ -5,14 +5,14 @@
 
 ## Summary
 
-Unify two incompatible script execution systems (Feature 005 Zod-manifest + Feature 016 `# @param` annotations) into a single system with secure script upload, JSON Schema parameter storage, content scanning for dangerous patterns, RBAC enforcement, hash-based integrity verification, and sandboxed execution. The unified system stores parameter schemas as JSON Schema (never raw Zod), converts to Zod at runtime for validation, and retains `# @param` parsing as a backward-compatible fallback.
+Unify two incompatible script execution systems (Feature 005 Zod-manifest + Feature 016 `# @param` annotations) into a single system with secure script upload, JSON Schema parameter storage, content scanning for dangerous patterns, RBAC enforcement, hash-based integrity verification, and sandboxed execution. The unified system stores parameter schemas as JSON Schema (never raw Zod), validates at runtime using ajv (no eval, no codegen), and retains `# @param` parsing as a backward-compatible fallback.
 
 > **[SECURITY-PASS-REQUIRED]**: This spec is BLOCKED until the 4 security vectors in spec.md are reviewed and signed off. Implementation phases MUST NOT begin until sign-off is obtained.
 
 ## Technical Context
 
 **Language/Version**: TypeScript (Node.js)
-**Primary Dependencies**: Express (server), Zod + `zod-to-json-schema` + `json-schema-to-zod`, React Query (client)
+**Primary Dependencies**: Express (server), Zod (static schemas only) + ajv + ajv-formats (dynamic JSON Schema validation), React Query (client)
 **Storage**: PostgreSQL — new `scripts` table, new `script_audit_entries` table
 **Testing**: Security scanner unit tests (100% rejection rate); backward-compat tests for Feature 005/016 scripts
 **Target Platform**: Web dashboard + remote Ubuntu servers
@@ -28,7 +28,7 @@ Unify two incompatible script execution systems (Feature 005 Zod-manifest + Feat
 | I. Operator safety first | **BLOCKED** | Security pass required before implementation — 4 open vectors |
 | II. Secrets never leak | PASS | Audit entries redact secret params; script content hashed not logged |
 | III. Reviewable database changes | PASS | Migration as .sql file |
-| IV. Typed boundaries | PASS | JSON Schema → Zod conversion; Zod validation on upload/execute |
+|| IV. Typed boundaries | PASS | JSON Schema validated via ajv at runtime; Zod for static schemas only |
 | V. Feature flags and rollback posture | PASS | Legacy code RETAINED as fallback (deprecation, not deletion); Rollback Strategy section in plan; Phase 0 gate blocks all implementation |
 | VI. Independent review gate | DEFERRED | Required before implement — plus security review gate |
 | VII. Snapshot stages | N/A | No snapshot tooling |
@@ -69,7 +69,7 @@ server/
 ├── middleware/
 │   └── script-rbac.ts                      # RBAC enforcement for script ops
 └── lib/
-    ├── json-schema-to-zod.ts               # Runtime JSON Schema → Zod conversion
+    ├── ajv-validator.ts               # ajv-based JSON Schema validator
     └── script-types.ts                     # Type definitions
 
 client/
@@ -120,14 +120,15 @@ client/
    - `declare`/`typeset` with function names
    - Associative arrays as dispatch tables
 
-**Policy**: If ANY layer flags → reject + require admin manual review. No "maybe."
+**Policy**: If ANY layer flags → warn admin with specific pattern details. Admin can proceed with upload. Advisory-only — sandbox (FR-008) is the sole security boundary.
 
-### JSON Schema ↔ Zod Conversion
+### JSON Schema Validation (ajv)
 
-- Forward (upload): `# @param` annotations → parsed to JSON Schema → stored in DB
-- Runtime (execute): JSON Schema → `json-schema-to-zod` → Zod validation of user params
-- Never store or eval raw Zod strings from user input
-- Never execute user-provided code for parameter parsing
+- Upload (one-way): `# @param` annotations → parsed to JSON Schema via custom parser → stored in DB
+- Runtime (execute): JSON Schema → `ajv.compile(schema)` → validate user params directly
+- Zod is NOT used for dynamic/runtime schema validation
+- `eval()` is NEVER invoked — ajv compiles to internal bytecode, not JS strings
+- `zod-to-json-schema` may be used during one-time migration (T022) to convert Feature 005's hardcoded Zod schemas to JSON Schema
 
 ## Rollback Strategy
 

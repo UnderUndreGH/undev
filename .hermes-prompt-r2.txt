@@ -1,0 +1,170 @@
+You are an autonomous SpecKit remediator — ROUND 2. Cross-AI reviewer (Antigravity, gemini-3.1-pro-high) found CRITICAL and HIGH severity issues across ALL 6 specs that the internal analyze pass missed. Your job: fix every HIGH and CRITICAL finding, address relevant MEDIUMs, then re-run `/speckit.analyze` to verify the remediation is consistent.
+
+CRITICAL RULES:
+- Touch all 6 specs this round: 017, 018, 019, 020, 021, 022
+- For each, checkout the corresponding branch BEFORE making changes
+- DO NOT commit anything to git
+- DO NOT push, do NOT delete branches, do NOT use --force/--yes/-y flags
+- DO NOT delete or rewrite the existing `reviews/antigravity.md` files — they are external reviewer verdicts and represent audit trail. Read them, address findings, but leave them in place.
+- After fixes, re-run `/speckit.analyze` per spec — this overwrites only `reviews/analyze.md` (the Claude self-consistency verdict)
+- The user will run a fresh Antigravity review in their IDE after this round; do NOT attempt to overwrite antigravity verdicts.
+- If a finding requires changing spec.md, propagate changes to plan.md / tasks.md / data-model.md as needed for consistency
+- If a finding requires a true architectural pivot (e.g., 022 F1 — drop Zod runtime, switch to ajv), do it — don't paper over with comments
+
+CONTEXT:
+- 6 specs (017-022) on respective branches, initial state committed by user
+- Each branch has spec.md, plan.md, tasks.md, data-model.md (where applicable), reviews/analyze.md, reviews/antigravity.md
+- Per Constitution Principle VI, /speckit.implement is BLOCKED until BOTH analyze PASS AND ≥2 external reviewer PASS verdicts are obtained
+- Antigravity found everyone non-PASS — your job is to close the gap so a fresh Antigravity review can pass
+
+═══════════════════════════════════════════════════════════════
+SPEC 017 — vpn-tab-deserialize-fix (Antigravity: MEDIUM, 1M+2L)
+═══════════════════════════════════════════════════════════════
+
+Read: `specs/017-vpn-tab-deserialize-fix/reviews/antigravity.md` for full finding context.
+
+Fixes:
+1. **F1 MEDIUM — null safety**: Edit tasks.md T002 (or equivalent task that touches `server/routes/servers-vpn.ts:227`) — code must be `res.json(rows ?? [])` not `res.json(rows)`. If `rows` is null/undefined from a query timing edge case, default to empty array. Acceptance: VPN tab never crashes on empty/null response.
+2. **F2 LOW — API envelope debate**: This is a real design trade-off. Edit spec.md "Assumptions" section: add an explicit decision note — "We chose array-at-root (vs `{ servers: [] }` envelope) because (a) existing client code already expects array, (b) pagination is not needed at current scale (<1000 servers per user), (c) if pagination needed later, can wrap in envelope as breaking version bump `/api/v2/servers/vpn`." Document the trade-off so future readers understand it was deliberate.
+3. **F3 LOW — other consumers**: Add a verification task to tasks.md: "T002b: Grep entire codebase for `/api/servers/vpn` consumers (server, client, scripts, tests). Confirm only `client/lib/vpn-api.ts` consumes this endpoint. If other consumers exist, update them to expect array."
+
+═══════════════════════════════════════════════════════════════
+SPEC 018 — amnezia-install-completion (Antigravity: MEDIUM, 1H+2M+1L)
+═══════════════════════════════════════════════════════════════
+
+Read: `specs/018-amnezia-install-completion/reviews/antigravity.md`.
+
+Fixes:
+1. **F1 HIGH — SSH 5+ min install timeout**: This is a real risk. Edit spec.md FR section: add FR "Worker MUST execute install asynchronously (detached background process) — HTTP request returns immediately with `install_id`, client polls `GET /api/servers/:id/install-status/:install_id` for progress. SSH session MUST set `ServerAliveInterval=30 ServerAliveCountMax=240` (2 hours keep-alive) to survive slow installs. Worker timeout: 30 minutes hard cap, configurable via `AMNEZIA_INSTALL_TIMEOUT_MIN` env (default 30)." Update plan.md "Worker Architecture" section accordingly. Update tasks.md to include keep-alive SSH config + polling endpoint + status persistence.
+2. **F2 MEDIUM — client-side QR generation**: Edit spec.md FR + tasks T009: drop server-side `qrcode` npm dep. Server returns decrypted config text (already encrypted in transport via HTTPS). Client uses `qrcode` React library (e.g., `react-qr-code` or `qrcode.react`) to render in browser memory. Add dependency in client/package.json (mark as task addition).
+3. **F3 MEDIUM — SCP path determinism**: Edit install-amnezia.sh spec: script MUST end with `cp -f "$GENERATED_CONFIG" /tmp/amnezia-export.vpn` and `cp -f "$GENERATED_WG_CONFIG" /tmp/amnezia-wg.conf` (deterministic paths). Worker SCPs from these known paths. Document in tasks.md.
+4. **F4 LOW — stage markers format**: Edit spec.md or tasks.md: parser must read lines matching `^\[STAGE: ([a-z_-]+)\]( .*)?$` from stdout. Define enum of stages: `installing_deps`, `configuring_server`, `generating_config`, `extracting_config`, `done`. Worker emits these via `echo "[STAGE: configuring_server]"` calls in install-amnezia.sh.
+
+═══════════════════════════════════════════════════════════════
+SPEC 019 — server-soft-delete (Antigravity: HIGH, 2H+1M+1L)
+═══════════════════════════════════════════════════════════════
+
+Read: `specs/019-server-soft-delete/reviews/antigravity.md`.
+
+NOTE: round-1 remediation addressed analyze findings (T006 query enumeration, T011 auth, T014/T015 dep). Antigravity findings are NEW and not yet addressed.
+
+Fixes:
+1. **F1 HIGH — unique constraint blocks re-add**: This is a real deal-breaker. Edit migration in tasks.md:
+   - Drop existing unique constraints on `servers.ip` and `servers.name` (and any other unique that should be soft-delete aware)
+   - Add partial unique indexes:
+     ```sql
+     CREATE UNIQUE INDEX idx_servers_ip_active ON servers(ip) WHERE deleted_at IS NULL;
+     CREATE UNIQUE INDEX idx_servers_name_active ON servers(name) WHERE deleted_at IS NULL;
+     ```
+   - This allows re-adding a server with the same IP/name after soft-delete; only ACTIVE servers must be unique. Soft-deleted rows can coexist with new ACTIVE rows at the same IP/name. Document in spec.md edge case section.
+2. **F2 HIGH — Drizzle relational queries**: Edit plan.md "Query Layer" section + add task to tasks.md: audit ALL Drizzle `db.query.<entity>.findMany({ with: { server: ... } })` usages and `.innerJoin/leftJoin(servers, ...)` patterns. For each, decide: should related entity (e.g., App) hide if its server is soft-deleted? If yes (default): add explicit `where: isNull(servers.deletedAt)` in nested `with:` clauses and join conditions. Document the policy explicitly in plan.md. Tasks: T006j (audit `with:`), T006k (audit joins), T006l (apply filters consistently).
+3. **F3 MEDIUM — partial index strategy**: Edit data-model.md: add "Index Strategy" subsection — partial index `WHERE deletedAt IS NOT NULL` accelerates the rare Archived view. Active-list path (the hot path) relies on existing primary key + foreign key indexes + the new partial unique indexes from F1. If table grows >100k servers, add `CREATE INDEX idx_servers_active ON servers(id) WHERE deleted_at IS NULL` later. Document decision.
+4. **F4 LOW — ON DELETE CASCADE verification**: Add task T010v: verify the 6 child tables (apps, deploys, backups, certs, health, locks) all have `ON DELETE CASCADE` on their `server_id` FK. If not, finalization worker must manually delete children in dependency order. Document findings in data-model.md.
+
+═══════════════════════════════════════════════════════════════
+SPEC 020 — ai-custom-provider (Antigravity: CRITICAL, 1C+2H+1M)
+═══════════════════════════════════════════════════════════════
+
+Read: `specs/020-ai-custom-provider/reviews/antigravity.md`.
+
+Fixes:
+1. **F1 CRITICAL — SSRF vulnerability**: This is the most important fix in this round. Edit spec.md: add new FR-SSRF: "endpointUrl MUST be validated against a denylist of private/internal addresses. Block: IPv4 private ranges (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16), link-local (169.254.0.0/16, fe80::/10), loopback (127.0.0.0/8, ::1), CGNAT (100.64.0.0/10), and DNS hostnames resolving to any of the above (re-validate at request time, not just config time, to prevent DNS rebinding). Reject `localhost`, `*.local`, `*.internal`. Override available via `ALLOW_LOCAL_AI_ENDPOINTS=true` server env var with mandatory audit log entry per request when the override is in effect."
+   - Update plan.md "URL Validation Layer" section: validation runs at TWO points: (a) on POST/PATCH of provider config (upload-time, fast-fail), (b) immediately before each outbound fetch call (run-time, defense against DB tampering + DNS rebinding by resolving hostname → IP → checking against denylist BEFORE fetch).
+   - Add tasks: T006a (URL validator helper module with comprehensive test suite covering all denylist ranges), T006b (integrate validator at provider config endpoint), T006c (integrate validator at fetch-time wrapper), T006d (env-var override with audit-entry emit).
+   - Reference: standard SSRF protection libraries — Node has no perfect one, recommend `is-private-ip` + `ipaddr.js` for parsing, manual hostname-resolve via `dns.promises.lookup`.
+2. **F2 HIGH — api_key_encrypted NOT NULL constraint**: Add migration task: `ALTER TABLE ai_provider_keys ALTER COLUMN api_key_encrypted DROP NOT NULL;`. Update Zod schema in tasks.md T002: `apiKey: z.string().min(1).optional()`. Edit spec.md FR-002: explicitly state "API key is OPTIONAL for openai-compatible providers — some local endpoints (LM Studio, Ollama) accept any value or empty string. UI displays apikey field as optional with help text 'Required for cloud providers, optional for local'."
+3. **F3 HIGH — Azure OpenAI auth split**: Antigravity is right — Azure uses `api-key` header, not `Authorization: Bearer`. Two options:
+   - Option A (recommended): Edit spec.md to explicitly state "Azure OpenAI is OUT OF SCOPE for this spec. The `openai-compatible` type targets OpenAI-API-compatible servers using standard `Authorization: Bearer` auth (OpenAI, OpenRouter, vLLM, LM Studio, Ollama with OpenAI-compat mode, llama.cpp server). Azure support requires a separate `azure-openai` provider type using `@ai-sdk/azure` with `resourceName`+`apiKey`+`apiVersion` fields — deferred to future spec."
+   - Option B: Add Azure as separate provider type in this spec. Schema enum adds `azure-openai`. Provider factory case uses `createAzure({...})`. Form shows Azure-specific fields. Larger scope.
+   - Pick Option A (defer Azure) unless there's strong reason. Update spec.md, plan.md, tasks.md accordingly.
+4. **F4 MEDIUM — test connectivity payload compat**: Edit T006 (test endpoint): payload uses small prompt "ping" with `max_completion_tokens: 5` (newer field, falls back to `max_tokens: 5` if 400 error). If both fail, attempt minimal stream-test (no max tokens). Goal: detect connectivity without breaking on quirky models (o1, structured outputs, etc.).
+
+═══════════════════════════════════════════════════════════════
+SPEC 021 — vpn-server-unification (Antigravity: HIGH, 1H+1M+1L)
+═══════════════════════════════════════════════════════════════
+
+Read: `specs/021-vpn-server-unification/reviews/antigravity.md`.
+
+NOTE: round-1 remediation addressed kind sync (analyze A001) but NOT kind downgrade orphan handling (Antigravity F1).
+
+Fixes:
+1. **F1 HIGH — kind downgrade orphan**: Edit spec.md FR: "kind transitions: `standard → vpn` requires initiating install flow (sets `vpnStatus='installing'`, all VPN fields optional but expected to populate during install). `vpn → standard` requires explicit user confirmation modal — confirms 'This will clear all VPN credentials and config. Continue?' — backend transaction sets `vpnStatus=NULL` and `UPDATE servers SET vpnConfig=NULL, vpnPubkey=NULL, vpnEndpoint=NULL, vpnInstalledAt=NULL WHERE id=?`. NO silent drop — kind change is an explicit destructive action when downgrading." Update T007 to enforce via Zod discriminatedUnion + backend transaction. Add data-model.md note on kind transition rules with state-diagram description.
+2. **F2 MEDIUM — form field stripping**: Edit T013 (unified ServerForm): use Zod `discriminatedUnion('kind', [standardServerSchema, vpnServerSchema])`. Frontend strips out-of-discriminator fields before submit. Backend re-validates with same discriminated union — rejects payloads with stale fields from the other variant. Document in tasks.md.
+3. **F3 LOW — vpnStatus interpretation**: Edit data-model.md: explicit assumption — "vpnStatus column is exclusively used for servers running self-hosted VPN (Amnezia, WireGuard). It is NEVER set for general application servers that happen to be VPN clients (e.g., a backend server using VPN to reach a database). The migration query `UPDATE servers SET kind='vpn' WHERE vpnStatus IS NOT NULL` is safe under this assumption." Verify by grep `vpnStatus` writes across codebase — only set by Amnezia install flow (Feature 016/018).
+
+═══════════════════════════════════════════════════════════════
+SPEC 022 — script-system-unification (Antigravity: CRITICAL, 1C+2H+1M)
+═══════════════════════════════════════════════════════════════
+
+Read: `specs/022-script-system-unification/reviews/antigravity.md`.
+
+NOTE: round-1 remediation addressed AST scanner upgrade (analyze A001) but NOT the architectural F1 (eval requirement) or F3 (sandbox fail-open) — those are deeper.
+
+Fixes:
+1. **F1 CRITICAL — json-schema-to-zod requires eval (architectural fix)**: This is an architectural mistake — fix at the root. Edit spec.md FR-003:
+   - DROP `json-schema-to-zod` dependency and all references
+   - REPLACE Zod runtime validation with `ajv` (Another JSON Schema Validator) — battle-tested, validates JSON Schema directly without eval
+   - New FR-003 text: "System MUST validate user-provided script parameters against the stored JSON Schema using `ajv` (a battle-tested JSON Schema validator). At UPLOAD time, system parses `# @param` annotations from .sh into JSON Schema via a custom parser (one-way, no codegen, no eval). At EXECUTION time, parameter values are validated against the stored JSON Schema using `ajv.compile(schema)(input)`. Zod is NOT used for any dynamic schema validation in this feature. eval() is NEVER invoked."
+   - Drop the previous "conversion fallback" FR (no longer needed — no fragile conversion happens)
+   - Update plan.md "Validation Layer" section accordingly: ajv is the runtime validator, the `# @param → JSON Schema` parser is the upload-time bridge
+   - Update tasks.md: drop tasks T002 (zod-to-json-schema), T013 (json-schema-to-zod), T013v (roundtrip test). Add T002' (`# @param` parser → JSON Schema, custom impl), T013' (ajv validator integration), T013v' (ajv compile/validate test with all supported JSON Schema constructs).
+   - Update package.json dependencies in scope: drop `zod-to-json-schema`, `json-schema-to-zod`. Add `ajv` + `ajv-formats`.
+2. **F2 HIGH — regex bash scanner = false sense of security**: Antigravity argues to remove it entirely and rely on sandbox. Pragmatic compromise: KEEP scanner BUT downgrade its role to "advisory warning" (informs admin of suspicious patterns) — NOT a security boundary. Sandbox is the ONLY security boundary.
+   - Edit spec.md: rename FR-004 from "MUST reject scripts containing dangerous patterns" to "SHOULD warn admin on upload if script contains suspicious patterns (advisory only — does NOT block upload or execution)". Admin sees warning but can proceed.
+   - Edit [SECURITY-PASS-REQUIRED] section item 1: scanner is advisory; sandbox is the boundary. Remove "MUST reject" language.
+   - Edit FR-008 (sandbox): elevate to MUST — "Script execution MUST run inside firejail or bubblewrap sandbox with: read-only root filesystem except `/tmp` and a designated work directory, dropped capabilities (no `CAP_SYS_ADMIN` etc.), no network access by default (override via per-script flag with admin approval), CPU+memory limits enforced via cgroups, kill timeout 10 minutes default."
+   - Update tasks: T010 changes from "AST-based content scanner (blocking)" to "advisory pattern scanner". Add task T011' "sandbox runner mandatory wrapper" — calls firejail with above policy.
+3. **F3 HIGH — sandbox fail-open is fail-OPEN antipattern**: Edit spec.md [SECURITY-PASS-REQUIRED] item 4: change "if sandboxing unavailable, log warning, do NOT block execution" to "if sandbox initialization fails OR sandbox tooling (firejail/bubblewrap) is not installed on the server, script execution MUST be blocked. fail-CLOSED. Pre-flight check at application startup: if sandbox tooling missing, application logs critical error and refuses to expose script execution endpoints (returns 503 Service Unavailable on POST /api/scripts/:id/execute). Admin must install sandbox tooling before script execution feature becomes usable."
+   - Add task T000-sec: pre-flight sandbox availability check at server startup. If missing, log + disable execution endpoints.
+   - Add task T011-sec: every script execution attempt verifies sandbox is functional (quick test) before launching real workload. If verification fails, abort with 503 + audit-entry.
+4. **F4 MEDIUM — migration path clarification**: Edit T022/T023: rename "convert Zod schemas to JSON Schema" to "one-time CLI migration: `node scripts/migrate-feature-005-to-jsonschema.mjs` — reads Feature 005 hardcoded Zod schemas, converts each to JSON Schema via `zod-to-json-schema` (this IS a legitimate use of the package — at MIGRATION time only, not runtime), persists rows to `scripts` table, marks `migration_source='feature-005-zod'`. Run by admin manually, not as part of startup."
+
+═══════════════════════════════════════════════════════════════
+EXECUTION
+═══════════════════════════════════════════════════════════════
+
+For each spec in [017, 018, 019, 020, 021, 022], in order:
+
+1. `git checkout <branch-name>`
+2. Read `specs/<branch>/reviews/antigravity.md` for full finding context
+3. Apply edits to spec.md, plan.md, tasks.md, data-model.md as needed per the per-spec fix list above
+4. Re-run `/speckit.analyze` on the same branch — overwrites `reviews/analyze.md`
+5. Capture new verdict + finding counts
+6. Do NOT touch `reviews/antigravity.md` files (preserve external reviewer audit trail)
+
+After all 6 are done, `git checkout main`, print this final report:
+
+```
+ROUND 2 REMEDIATION RESULTS:
+
+| Spec | Antigravity (last) | Analyze BEFORE | Analyze AFTER | Files Changed | New HIGH/CRITICAL |
+|------|--------------------|----------------|---------------|---------------|---------------------|
+| 017  | MEDIUM (1M,2L)     | PASS           | <V>           | <list>        | <N>                 |
+| 018  | MEDIUM (1H,2M,1L)  | PASS           | <V>           | <list>        | <N>                 |
+| 019  | HIGH (2H,1M,1L)    | PASS           | <V>           | <list>        | <N>                 |
+| 020  | CRITICAL (1C,2H,1M)| PASS           | <V>           | <list>        | <N>                 |
+| 021  | HIGH (1H,1M,1L)    | PASS           | <V>           | <list>        | <N>                 |
+| 022  | CRITICAL (1C,2H,1M)| PASS           | <V>           | <list>        | <N>                 |
+
+KEY DESIGN PIVOTS:
+- spec 020: SSRF protection added (URL denylist + dns-rebinding mitigation at fetch time + env override audit)
+- spec 020: Azure deferred to future spec (out of scope)
+- spec 022: Zod runtime DROPPED — replaced with ajv (no eval)
+- spec 022: regex scanner downgraded to advisory; sandbox is sole security boundary
+- spec 022: sandbox fail-CLOSED (pre-flight check, 503 if unavailable)
+- spec 019: partial unique indexes WHERE deleted_at IS NULL (enables re-add after soft-delete)
+- spec 019: Drizzle `with:`/join filter audit task added
+
+[DEFERRED-USER-DECISION] FINDINGS:
+- (or "none" if all resolved or accepted with documented justification)
+
+NEW HIGH/CRITICAL INTRODUCED BY REMEDIATION (regression check):
+- (or "none")
+
+NEXT STEPS:
+- User re-runs /speckit.review in Antigravity IDE on all 6 to verify findings closed
+- After both verdicts PASS → ready for /speckit.implement per Principle VI
+- Specs still NON-PASS at analyze level: <list with reasons>
+```
+
+If any /speckit.analyze re-run fails, STOP, report which one failed + full error, exit. Do not silently skip.

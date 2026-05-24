@@ -71,11 +71,12 @@ After installation completes, the user can return to the server detail page at a
 ### Functional Requirements
 
 - **FR-001**: System MUST execute Amnezia VPN installation on a remote Ubuntu server via SSH when the user triggers the install action.
+- **FR-001b**: Worker MUST execute install asynchronously (detached background process) — HTTP request returns immediately with `install_id`, client polls `GET /api/servers/:id/install-status/:install_id` for progress. SSH session MUST set `ServerAliveInterval=30 ServerAliveCountMax=240` (2 hours keep-alive) to survive slow installs. Worker timeout: 30 minutes hard cap, configurable via `AMNEZIA_INSTALL_TIMEOUT_MIN` env (default 30).
 - **FR-002**: System MUST report installation progress through multiple stages (connecting, installing, configuring, extracting, complete).
 - **FR-003**: System MUST extract the generated VPN configuration (`.vpn` file and/or WireGuard `.conf`) after successful installation.
 - **FR-004**: System MUST store the extracted configuration securely (encrypted at rest).
 - **FR-005**: System MUST provide a UI mechanism for the user to download the VPN config file.
-- **FR-006**: System MUST provide a UI mechanism for the user to display a QR code of the VPN config for mobile scanning.
+- **FR-006**: System MUST provide a UI mechanism for the user to display a QR code of the VPN config for mobile scanning. QR code is generated CLIENT-SIDE from decrypted config text using a React QR library (e.g., `react-qr-code` or `qrcode.react`). Server returns decrypted config text via HTTPS; client renders QR in browser memory.
 - **FR-007**: System MUST update `vpnStatus` through the lifecycle: "installing" → "running" (success) or "error" (failure).
 - **FR-008**: System MUST support retrying a failed installation.
 - **FR-009**: System MUST warn the user when re-installing on a server that already has VPN configured.
