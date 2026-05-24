@@ -6,7 +6,7 @@
     "ref": "latest",
     "commit": "104056b5c556882ebcb81dfe1d93fa71d3cd73cd"
   },
-  "installedAt": "2026-05-22T21:52:06.317Z",
+  "installedAt": "2026-05-23T23:52:12.958Z",
   "targets": [
     "claude",
     "copilot",
@@ -3921,8 +3921,8 @@
       "kind": "source",
       "class": "core",
       "status": "managed",
-      "sourceCanonicalHash": "sha256:a1c448664e4acbb1523face08af3f35723ff07f9220059961f43214f82599993",
-      "localCanonicalHash": "sha256:a1c448664e4acbb1523face08af3f35723ff07f9220059961f43214f82599993"
+      "sourceCanonicalHash": "sha256:c806fe8fd172632886a3a88e0ab5ef43bab47521d4e893b1bf15aef8ebfd8595",
+      "localCanonicalHash": "sha256:c806fe8fd172632886a3a88e0ab5ef43bab47521d4e893b1bf15aef8ebfd8595"
     },
     {
       "path": ".claude/commands/speckit.full-plan.md",
@@ -3945,8 +3945,8 @@
       "kind": "generated",
       "transformer": "claude-to-copilot-prompt",
       "fromSource": ".claude/commands/hermes-invocation.md",
-      "renderedHash": "sha256:87ec034231d2eb26eda7c7b052da9927abcd2a0c44a8b745f60ad17d4176ae8c",
-      "localRenderedHash": "sha256:87ec034231d2eb26eda7c7b052da9927abcd2a0c44a8b745f60ad17d4176ae8c",
+      "renderedHash": "sha256:8e1f69baa16567bc94ebcb596d27c473d1228d33b2a99cfeb4c2f5a065b9198e",
+      "localRenderedHash": "sha256:8e1f69baa16567bc94ebcb596d27c473d1228d33b2a99cfeb4c2f5a065b9198e",
       "status": "managed"
     },
     {
@@ -3972,8 +3972,8 @@
       "kind": "generated",
       "transformer": "claude-to-gemini-command",
       "fromSource": ".claude/commands/hermes-invocation.md",
-      "renderedHash": "sha256:5484c64ad5b7f440e934f14c7eab26d40b1e4d053dfbbb1d9c319611640e14c1",
-      "localRenderedHash": "sha256:5484c64ad5b7f440e934f14c7eab26d40b1e4d053dfbbb1d9c319611640e14c1",
+      "renderedHash": "sha256:1bb64c76347a8dfbf6ef4159ae2e0e1ebcece600d3d613dd407e60963d185a0d",
+      "localRenderedHash": "sha256:1bb64c76347a8dfbf6ef4159ae2e0e1ebcece600d3d613dd407e60963d185a0d",
       "status": "managed"
     },
     {
@@ -3992,6 +3992,32 @@
       "fromSource": ".claude/commands/speckit.full-spec.md",
       "renderedHash": "sha256:30eaf1c854372bd2f93a4d97cef9c90c6da96ad2f34323799a3c883f32a3a13a",
       "localRenderedHash": "sha256:30eaf1c854372bd2f93a4d97cef9c90c6da96ad2f34323799a3c883f32a3a13a",
+      "status": "managed"
+    },
+    {
+      "path": ".claude/commands/antigravity-invocation.md",
+      "kind": "source",
+      "class": "core",
+      "status": "managed",
+      "sourceCanonicalHash": "sha256:65dcca5e6bd4e2391e5a824ddee6b4d4d17a6be160d0084a70fcd48ddc5f343a",
+      "localCanonicalHash": "sha256:65dcca5e6bd4e2391e5a824ddee6b4d4d17a6be160d0084a70fcd48ddc5f343a"
+    },
+    {
+      "path": ".github/prompts/antigravity-invocation.prompt.md",
+      "kind": "generated",
+      "transformer": "claude-to-copilot-prompt",
+      "fromSource": ".claude/commands/antigravity-invocation.md",
+      "renderedHash": "sha256:c71a1bc620bbeb0097384488aa2ae8f2d3b4fbb91452cf397bc0de76732b1fdc",
+      "localRenderedHash": "sha256:c71a1bc620bbeb0097384488aa2ae8f2d3b4fbb91452cf397bc0de76732b1fdc",
+      "status": "managed"
+    },
+    {
+      "path": ".gemini/commands/antigravity-invocation.toml",
+      "kind": "generated",
+      "transformer": "claude-to-gemini-command",
+      "fromSource": ".claude/commands/antigravity-invocation.md",
+      "renderedHash": "sha256:f8a4351e01900fc8b2ee39612d1848084d89050b95f1ca776ffbbdcd510983d5",
+      "localRenderedHash": "sha256:f8a4351e01900fc8b2ee39612d1848084d89050b95f1ca776ffbbdcd510983d5",
       "status": "managed"
     }
   ]

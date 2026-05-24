@@ -1,171 +1,100 @@
-Fix remaining HIGH/MEDIUM/LOW issues from code review of Feature 013 AI Incident Copilot. The previous two passes already addressed CRITICAL (C1-C22) and RESIDUAL (R1-R3). Branch is `013-ai-incident-copilot`. Working directory is the project root; feature code lives under `devops-app/`. Do NOT commit, push, or PR.
+You are an autonomous SpecKit orchestrator. Your task: take the prioritized list below (6 items) and create SIX separate feature specs, ONE per item, using the project's `/speckit.full-spec` command for each.
 
-Spawn subagents for parallel work where files are independent. Group fixes by file when possible to minimize churn. If a fix is non-trivial or risky to combine with adjacent ones, prefer a separate edit.
+CRITICAL RULES:
+- Run /speckit.full-spec SIX TIMES, sequentially, one per priority item
+- For each call, pass a complete feature description that incorporates the "why", "key files", and "scope" notes from the priority entry below
+- DO NOT commit anything to git
+- DO NOT use --force, --yes, -y flags anywhere
+- If /speckit.full-spec asks clarification questions, answer them YOURSELF based on the audit context provided below — use your best judgment from existing codebase. Only flag [NEEDS-USER-INPUT] in the final report if you genuinely cannot decide (e.g., business policy, naming preference, UX trade-off with no clear better answer)
+- For item #6 (script unification), explicitly add a section "[SECURITY-PASS-REQUIRED]" in the spec describing the RCE vectors that must be closed before implementation
+- After all 6 specs are done, print a final report (format at bottom)
 
-After ALL fixes, run:
-- `cd devops-app && npm run typecheck` — MUST pass with NO new errors (5 pre-existing in schema.ts/main.tsx are baseline).
+BEFORE STARTING:
+- Read `specs/main/architecture.md` and `specs/main/requirements.md` to anchor terminology
+- List existing specs: `ls specs/` — these influence naming (NN-slug pattern) and provide reference for similar features. Look especially at specs/016-vpn-features (already implemented per session memory) — items #2 and #5 are direct follow-ups
+- Check `.specify/scripts/powershell/check-prerequisites.ps1` and `create-new-feature.ps1` to confirm SpecKit infra is intact
 
-If a fix breaks compilation in a way you cannot resolve, REVERT that file and report which task was abandoned.
+AUDIT CONTEXT (from earlier read-only investigation — facts, not assumptions):
+- VPN backend returns `{ servers: rows }` but client expects array — see `server/routes/servers-vpn.ts:227` vs `client/lib/vpn-api.ts:28`
+- Server deletion backend exists at `DELETE /api/servers/:id` (`server/routes/servers.ts:117-136`) but lacks UI and audit-entry; 6-table CASCADE risk (apps, deploys, backups, certs, health, locks)
+- Two script systems: Feature 005 (Zod-manifest, 13 hardcoded scripts) + Feature 016 (`# @param` annotations, DB-stored) with incompatible parsers
+- AI Copilot has pluggable providers at `server/services/ai/providers.ts:12` (anthropic/openai/ollama) — needs OpenAI-compatible variant. Existing AES-256-GCM encryption for `api_key_encrypted` in `ai_provider_keys` table. Settings UI at `client/components/settings/AiSettingsSection.tsx` already supports CRUD + test connectivity + budget controls
+- Amnezia install is a stub: checkbox sets vpnStatus="installing" then halts — no install-amnezia.sh script, no config extraction, no delivery. Feature 016 worker integration is there but the install action is unwired
+- Storage is unified (single `servers` table with VPN columns via ALTER) but two routers + two React Query caches cause drift
 
-===========================================
-HIGH severity (13 tasks)
-===========================================
+═══════════════════════════════════════════════════════════════
+THE 6 PRIORITIES — RUN /speckit.full-spec ONE PER ITEM, IN ORDER
+═══════════════════════════════════════════════════════════════
 
-TASK H1 — system-prompt.ts: per-conversation override layer
-- File: `devops-app/server/services/ai/system-prompt.ts`
-- Problem: §15.1 precedence is `per-conversation override → admin DB → TS fallback`. Currently only `admin DB → TS`. No way to vary prompt per conversation type.
-- Fix: Change `resolveSystemPrompt()` signature to `resolveSystemPrompt(conversationId?: string): Promise<string>`. If `conversationId` provided, lookup `aiConversations.systemPromptOverride` column (add column to schema if missing — TEXT NULL — and migration file `0014_ai_system_prompt_override.sql`). If override present + non-empty, return it. Otherwise fall through to admin DB → TS fallback.
-- Update caller in `incident-analyzer.ts` to pass conversationId.
+#1 — VPN tab deserialize fix (TRIVIAL, 1 line)
+- Goal: change `res.json({ servers: rows })` → `res.json(rows)` in `server/routes/servers-vpn.ts:227` so client `vpn-api.ts:28` receives array as expected
+- Scope: this single endpoint + manual verification test
+- Acceptance: VPN tab displays existing VPN-flagged servers
+- Slug suggestion: vpn-tab-deserialize-fix
 
-TASK H2 — ai-conversations.ts: return existing in-flight conversation on duplicate POST
-- File: `devops-app/server/routes/ai-conversations.ts`
-- Problem: spec US2 — repeated "Analyze with AI" click for same target during in-flight conversation should return existing, not duplicate.
-- Fix: In POST handler before insert, query `aiConversations` WHERE `targetKind = parsed.data.targetKind AND targetId = parsed.data.targetId AND status IN ('pending', 'streaming')` LIMIT 1. If found, return that row's id with HTTP 200 and a header `X-Existing-Conversation: true`. Otherwise proceed to insert as today.
+#2 — Amnezia VPN install completion (HIGH effort, HIGH impact)
+- Goal: finish the stubbed install flow. Currently: clicking "Install Amnezia VPN" sets vpnStatus="installing" and stops. Need: install-amnezia.sh script, worker invocation, config extraction (.vpn URL or WireGuard .conf + QR), delivery to user via dashboard (download / QR display / copy-to-clipboard)
+- Scope: `scripts/vpn/install-amnezia.sh` (new), worker integration, schema for storing extracted configs, UI for delivery (modal or sidebar)
+- Acceptance: end-to-end install on fresh Ubuntu VPS → user can download `.vpn` or scan QR → connect via Amnezia client → status updates to "running"
+- Note: builds on Feature 016 (already implemented per session memory observation 905); this is FOLLOWUP spec to close the gap
+- Slug suggestion: amnezia-install-completion
 
-TASK H3 — GIN index for FTS on hypothesis
-- File: New migration `devops-app/server/db/migrations/0014_ai_hypothesis_fts_index.sql` (or whatever the next migration number is — check `migrations/meta/_journal.json` and use the next one). Update `_journal.json` accordingly.
-- Problem: `ai-conversations.ts` does `to_tsvector('english', hypothesis) @@ plainto_tsquery(...)` — SEQ SCAN without GIN index.
-- Fix: `CREATE INDEX IF NOT EXISTS idx_ai_conversations_hypothesis_fts ON ai_conversations USING GIN (to_tsvector('english', hypothesis));`. Add journal entry.
+#3 — Server soft-delete with grace period (MEDIUM)
+- Goal: add UI "Delete Server" button with soft-delete semantics. New `deletedAt` column on `servers` table, all queries filter `WHERE deletedAt IS NULL`, finalization cron after 30 days triggers CASCADE. "Restore" action in archived-servers panel within the 30-day window.
+- Scope: schema migration (add `deletedAt` to servers), update queries that read `servers` (~8 callsites), new cron worker, audit-entry for delete events, confirmation modal (GitHub-style "type server name to confirm"), archived servers view
+- Acceptance: user can delete; deleted servers disappear from main list but appear in Archived view; restore works within 30 days; after 30 days CASCADE fires automatically; audit log shows every delete event with actor + timestamp
+- Files in scope: `server/db/schema.ts` (servers table), `server/db/queries/servers.ts`, `server/routes/servers.ts`, new cron worker, `client/components/servers/` (delete button + confirmation modal + archived view)
+- Slug suggestion: server-soft-delete
 
-TASK H4 — Emit `ai.tool_call_proposed` audit when LLM proposes a tool call
-- File: `devops-app/server/services/ai/incident-analyzer.ts`
-- Problem: tool-calls insert with `status='proposed'` at line ~157-164 but no audit emission. Per FR-027 every state transition must emit audit.
-- Fix: After each `db.insert(aiToolCalls)` in the tool-call loop, emit an `auditEntries` row with action `ai.tool_call_proposed`, targetType `ai_tool_call`, targetId `toolCallId`, details `{ manifestId, conversationId, params }`. Use the existing `auditEntries` schema (look at the pattern in `tool-call-dispatcher.ts:emitToolCallAudit`).
+#4 — AI Copilot custom OpenAI/Anthropic provider (LOW effort, MEDIUM impact)
+- Goal: add `openai-compatible` provider type so users can plug in Azure OpenAI, OpenRouter, LM Studio, vLLM, llama.cpp server, etc. via custom baseURL. For Anthropic, support custom baseURL via `@ai-sdk/anthropic` config (it accepts a `baseURL` option).
+- Scope: ~3 files — `server/db/schema.ts` (extend `ai_provider_type` enum to include `openai-compatible`), `server/services/ai/providers.ts:12` (add case using `createOpenAICompatible({ baseURL, apiKey })` from `@ai-sdk/openai-compatible`), `client/components/settings/ProviderConfigForm.tsx` (show `endpointUrl` text field for new provider type)
+- Acceptance: user enters baseURL + apiKey + model name in Settings for arbitrary OpenAI-compatible endpoint; test-connectivity round-trips successfully; incident copilot can invoke that provider for chat completions and tool calls
+- Slug suggestion: ai-custom-provider
 
-TASK H5 — Multi-turn conversation support
-- File: `devops-app/server/services/ai/incident-analyzer.ts`
-- Problem: assistant message hardcoded to `seq: 1`. Spec FR-026 says tool result is fed back as next conversation turn, LLM can propose further actions.
-- Fix:
-  1. Drop hardcoded `seq: 0` and `seq: 1`. Compute next seq via `max(seq) + 1` from `aiMessages` for the conversation, OR maintain a counter local to the function.
-  2. After a tool call is approved + executed (this happens out-of-band via dispatcher), provide a mechanism to RESUME the conversation with the result. Add a new export `resumeConversationWithToolResult(conversationId, toolCallId, resultPayload)`:
-     - Insert `aiMessages` role='tool' with serialized resultPayload at next seq.
-     - Re-invoke `streamText` (or `streamObject`) with full message history including the tool result.
-     - Persist additional assistant turn at next seq.
-     - Update token totals via reconcileTokens.
-  3. Wire `resumeConversationWithToolResult` into `tool-call-dispatcher.ts` AFTER successful real execution: when `scriptsRunner.runScript` returns and the script's terminal status is captured, fire-and-forget call to `resumeConversationWithToolResult`. (Hint: existing scripts-runner has a terminal-status hook — extend it to call the AI resume if `script_runs.aiConversationId` is non-null.)
-- If this is too complex to land cleanly, implement only steps 1-2 (the mechanism) without step 3 wiring, and report step 3 as deferred.
+#5 — VPN/Server unification (MEDIUM)
+- Goal: collapse two routers + two React Query caches into one unified API. Build ON TOP of #1 (assume #1 already shipped). New API: `GET /api/servers?kind=vpn` (or compute kind from `vpnStatus IS NOT NULL`). Single React Query cache with filter-aware key `["servers", { kind }]`. Merge `AddServerForm` + VPN `ServerForm` into one component with conditional fields based on kind.
+- Scope: ~8 files — `server/db/schema.ts` (optional `kind` column or computed view), retire `server/routes/servers-vpn.ts` (merge endpoints into `servers.ts`), retire duplicate React Query hooks in `client/lib/vpn-api.ts`, merge form components, update VPN tab to use kind filter
+- Acceptance: one router, one cache, one form; VPN tab shows filtered subset and works identically; adding a third server type (e.g., k8s, proxmox) later requires only schema enum update + conditional form section
+- Slug suggestion: vpn-server-unification
 
-TASK H7 — Drop `as any` cast in ai-providers test endpoint
-- File: `devops-app/server/routes/ai-providers.ts` (line ~103)
-- Problem: `await generateText({ model, prompt: '...' } as any);` bypasses Vercel AI SDK types.
-- Fix: Use proper typed call signature. `generateText({ model, prompt: 'Reply with "ok".' })` should typecheck cleanly if model type is correct from `resolveModel`. If TS complains, fix the underlying type of `resolveModel` to return a union of acceptable model types.
+#6 — Script system unification (HIGH, security-blocked)
+- Goal: unify two script-execution systems (Feature 005 Zod-manifest with 13 hardcoded scripts + Feature 016 `# @param` DB-stored). Proposed approach: keep `# @param` parser as fallback for legacy/portability, primary is Zod-manifest GENERATED from uploaded .sh files, stored as JSON Schema in DB (not raw Zod strings — never eval untrusted code), compiled back to Zod at runtime via `json-schema-to-zod`.
+- [SECURITY-PASS-REQUIRED] — explicit blocker section in spec:
+  * Current `# @param` validation lets ANY bash content pass execution — need content scanner for `rm -rf /`, `curl | bash`, `eval`, `exec`, network exfiltration patterns, fork bombs
+  * `VPN_SCRIPTS_ROOT` writability needs RBAC enforcement — if attacker can write into this directory, prior script-upload protection is bypassed, full RCE on every script execution
+  * Arbitrary script upload needs RBAC: only admin role can upload; audit every upload event; hash + sign scripts at rest; verify signature at execution
+  * Sandboxing: scripts currently run on VPS with full deploy-user privileges — investigate firejail/bubblewrap/landlock for syscall-level confinement
+- Scope: parser refactor, JSON Schema↔Zod converter (use `zod-to-json-schema` for forward conversion + `json-schema-to-zod` for back), bash content security scanner, RBAC layer for script CRUD, sandboxed runner
+- Acceptance: user uploads .sh, system parses parameters + scans content + stores; runtime executes inside sandbox; legacy `# @param` scripts continue working; admins see full audit trail of upload + execute events
+- Slug suggestion: script-system-unification
+- Note: explicitly state in spec.md that implementation is BLOCKED on completion of the [SECURITY-PASS-REQUIRED] section. tasks.md (when generated later via /speckit.tasks) should be tagged "BLOCKED on security pass" at the top.
 
-TASK H8 — Sandbox path feeds result back to LLM as tool message
-- File: `devops-app/server/services/ai/tool-call-dispatcher.ts`
-- Problem: sandbox/dry-run path (lines ~110-128) returns fixture but doesn't insert it into `aiMessages` as a tool result. Per FR-026 result must be fed back regardless of dry_run.
-- Fix: In the sandbox branch, after marking tool call completed, insert an `aiMessages` row: role='tool', conversationId = `convo.id`, seq = max+1 (compute via SQL or pull max first), contentText = `JSON.stringify(fixture)`, contentMeta = `{ "dry_run": true, "manifestId": tc.manifestId, "toolCallId": tc.id }`. Reuse the seq computation pattern from H5.
+═══════════════════════════════════════════════════════════════
+EXECUTION
+═══════════════════════════════════════════════════════════════
+1. Read architecture.md + requirements.md + ls specs/
+2. For each priority #1 → #6 in order:
+   a. Invoke /speckit.full-spec with the feature description above
+   b. Answer any clarify questions yourself using audit context (flag [NEEDS-USER-INPUT] only when truly stuck)
+   c. Note the resulting branch name + spec.md path
+3. Print final report in this exact format:
 
-TASK H9 — Filter `archived_at IS NULL` in budget monthly aggregation
-- File: `devops-app/server/services/ai/budget-enforcer.ts`
-- Problem: `checkMonthlyBudget` SUMs all rows in current month without filtering soft-deleted conversations. If archiver runs mid-cycle, budget calc becomes inconsistent.
-- Fix: Add `WHERE archived_at IS NULL` to the existing `gte(createdAt, monthStart)` predicate. Drizzle equivalent: `and(gte(aiConversations.createdAt, monthStart), isNull(aiConversations.archivedAt))`. Import `isNull` from drizzle-orm.
+```
+COMPLETED 6 SPECS:
+1. <slug> — <branch-name> — <specs/NN-slug/spec.md>
+2. <slug> — <branch-name> — <specs/NN-slug/spec.md>
+3. <slug> — <branch-name> — <specs/NN-slug/spec.md>
+4. <slug> — <branch-name> — <specs/NN-slug/spec.md>
+5. <slug> — <branch-name> — <specs/NN-slug/spec.md>
+6. <slug> — <branch-name> — <specs/NN-slug/spec.md>
 
-TASK H10 — Parallelize context-aggregator queries with Promise.all
-- File: `devops-app/server/services/ai/context-aggregator.ts`
-- Problem: 5 query sections await sequentially. With P99 50ms per query, total 250ms+ for context gathering. SC-001 budget is 30s.
-- Fix: Refactor each section into a separate async helper function: `fetchAuditEntries(targetKind, targetId)`, `fetchHealthProbes(...)`, `fetchScriptRuns(...)`, `fetchDeployments(...)`, `fetchCertEvents(...)`. Each returns `Promise<{ section: string, redactions: Record<...> }>` matching current `maskContextDocument` shape. Then `const [sec1, sec2, sec3, sec4, sec5] = await Promise.all([...])` and merge.
-- Preserve per-section error handling: individual try/catch inside each helper so one failing section doesn't tank the whole aggregation.
+UNRESOLVED [NEEDS-USER-INPUT]:
+- spec <slug>: <question>
+- ...
 
-TASK H11 — Field-level scrubbing for DB rows before LLM context
-- File: `devops-app/server/services/ai/context-aggregator.ts`
-- Problem: `JSON.stringify(r)` on full row dumps `errorMessage`, `paramsJson`, `details` (audit), etc. mask-context regex catches some but JSON `"password": "value"` structure may slip through.
-- Fix: Create per-table field whitelists for what goes into LLM context. Example for `audit_entries`: include `timestamp`, `action`, `target_type`, `target_id`, `result`, `details` (but mask `details`). For `script_runs`: exclude `params` field entirely (already masked at insert via `maskSecrets`, but defence in depth) — use `id, scriptId, serverId, status, startedAt, finishedAt, errorMessage` only. Same pattern for deployments / cert_events. Construct a sanitized object per row before JSON.stringify.
+SECURITY NOTES:
+- Item #6 includes [SECURITY-PASS-REQUIRED] section: <one-line summary>
+```
 
-TASK H12 — Human-readable description for reversible tool flag
-- File: `devops-app/server/lib/ai-tool-registry.ts`
-- Problem: `description: \`${entry.description}. Danger: ${entry.dangerLevel ?? "low"}. Reversible: ${entry.reversible ?? false}.\`` — booleans serialized verbatim.
-- Fix: Translate the booleans to natural-language hints the LLM can use. Example:
-  ```
-  const dangerNote = entry.dangerLevel === "high"
-    ? "DANGER: high — destructive action. Operator must type-confirm before execution."
-    : entry.dangerLevel === "medium"
-    ? "Caution: medium — modifies system state. Operator approval required."
-    : "Low impact — safe to propose freely.";
-  const reversibleNote = entry.reversible
-    ? "Reversible — can be undone."
-    : "IRREVERSIBLE — prefer reversible alternatives when possible.";
-  ```
-  Compose: `${entry.description} ${dangerNote} ${reversibleNote}`.
-
-TASK H13 — Pagination for /api/ai/conversations list
-- File: `devops-app/server/routes/ai-conversations.ts`
-- Problem: GET / handler `.limit(50)` hardcoded, no offset/cursor.
-- Fix: Accept `?limit=N&offset=M` query params (validate via Zod: `limit: z.coerce.number().int().min(1).max(200).default(50)`, `offset: z.coerce.number().int().min(0).default(0)`). Pass to drizzle. Also return total count via separate `count(*)` query when offset=0 to support UI pagination ("Page 1 of N").
-
-TASK H14 — Add try/catch around `reserveTokens` call in incident-analyzer
-- File: `devops-app/server/services/ai/incident-analyzer.ts` (line ~60)
-- Problem: `await reserveTokens(conversationId, settings.perIncidentTokenCapIn)` — if DB write fails, throw propagates; conversation status may be left as `pending`.
-- Fix: Wrap in try/catch. On failure: set conversation status to `error`, log + emit audit `ai.analysis_failed` with reason `reserve_tokens_failed`, throw `AppError.internalServerError("Failed to reserve tokens")`.
-
-===========================================
-MEDIUM severity (8 tasks)
-===========================================
-
-TASK M1 — compose-static-lint rule #2: correct DB-ports check
-- File: `devops-app/server/lib/compose-static-lint.ts`
-- Problem: rule `reserved-ports` checks `< 1024` (privileged-port check). Spec FR-032 says reserved ports = common DB/service ports exposed externally (5432, 6379, 27017, 9200, 9300, 22, 3306, 11211).
-- Fix: Rename rule to `db-ports-exposed`. Check if mapped host port is in `[22, 3306, 5432, 6379, 9200, 9300, 11211, 27017]`. Warning severity. Message: `Service "X" exposes database port N publicly. Use an internal network and bind to localhost only.`
-- Keep both checks if you want (privileged + db-exposed), but the spec-mandated one is db-exposed.
-
-TASK M2 — compose-static-lint: add `info` tier to severity enum
-- File: `devops-app/server/lib/compose-static-lint.ts`
-- Problem: type `severity: "error" | "warning"`. Spec FR-032 says `info | warn | error`.
-- Fix: Change to `"info" | "warning" | "error"`. Re-categorize rule #7 (`missing-depends-on`) as `info` severity.
-
-TASK M4 — Replace console.error with logger.error
-- File: `devops-app/server/routes/ai-conversations.ts` (line ~76)
-- Problem: `console.error(...)` mixed with `logger.error(...)` elsewhere — anti-pattern §14.
-- Fix: Replace with `logger.error({ ctx: "ai-conversations", err, conversationId: id }, "Async analysis failure");`. Import logger from `../lib/logger.js`.
-
-TASK M6 — Use design tokens in ToolCallApprovalDialog
-- File: `devops-app/client/components/ai/ToolCallApprovalDialog.tsx`
-- Problem: `bg-brand-purple` hardcoded — inconsistent with project Tailwind tokens used elsewhere.
-- Fix: Inspect other ai/* components in `devops-app/client/components/ai/` for the canonical brand token. If consistently `bg-brand-purple` is used elsewhere, keep it (it IS the token). If others use semantic tokens like `bg-primary-600` / `bg-action-confirm`, switch this file to match. Goal: consistency across the AI components.
-
-TASK M7 — Consistent logger ctx prefixes
-- Files: all `devops-app/server/services/ai/*.ts` and `devops-app/server/lib/{mask-context-document,ai-tool-registry,compose-static-lint}.ts`
-- Problem: inconsistent prefixes — `"ai"`, `"incident-analyzer"`, `"tool-dispatcher"`, `"context-aggregator"`, `"push-subscriber"`, `"budget-enforcer"`.
-- Fix: Standardize to `ai:<service-name>` format. E.g., `ai:incident-analyzer`, `ai:tool-dispatcher`, `ai:context-aggregator`, `ai:push-subscriber`, `ai:budget-enforcer`, `ai:mask-context`, `ai:tool-registry`, `ai:compose-lint`. Update all `logger.{info,warn,error}({ ctx: "..." }, ...)` calls.
-
-TASK M8 — Use `containsHighConfidenceSecrets` or delete it
-- File: `devops-app/server/lib/mask-context-document.ts`
-- Problem: function exported, never called — dead code (§4 "negative lines").
-- Fix: Wire into `context-aggregator.ts` as a circuit-breaker: if `containsHighConfidenceSecrets(rawString)` returns true for any source (BEFORE masking), refuse to add that source to context, emit `ai.context_blocked_high_confidence_secret` audit, and log warning. This makes the function load-bearing AND adds a defence-in-depth layer.
-
-TASK M9 — Add ORDER BY for provider selection determinism
-- File: `devops-app/server/routes/ai-conversations.ts` (line ~55) AND `devops-app/server/services/ai/push-subscriber.ts` (line ~147)
-- Problem: `db.select().from(aiProviderKeys).where(eq(isActive, true)).limit(1)` — when multiple active providers exist (edge case), result is non-deterministic.
-- Fix: Add `.orderBy(desc(aiProviderKeys.createdAt))` — most recently configured provider wins. Import `desc` from drizzle-orm.
-
-TASK M10 — Error handler for setTimeout DB update in incident-analyzer
-- File: `devops-app/server/services/ai/incident-analyzer.ts` (line ~97-104 — wall-clock safety net)
-- Problem: `db.update(...).execute()` inside setTimeout callback — fire-and-forget without .catch().
-- Fix: `db.update(...).execute().catch((err) => logger.error({ ctx: "ai:incident-analyzer", err, conversationId }, "Timeout status update failed"));`
-
-===========================================
-LOW severity (consolidated)
-===========================================
-
-TASK L-ALL — Cleanup batch
-- L1: Replace remaining `(req as any).userId` accesses across all AI routes (`ai-tool-calls.ts`, `ai-providers.ts`, `ai-settings.ts`, `ai-conversations.ts`, `ai-compose-review.ts`, `ai-spend.ts`) with `getOperatorId(req)` — if any were missed in the C8 pass. Drop the cast pattern everywhere.
-- L2: Add basic a11y to `ToolCallApprovalDialog.tsx`:
-  - `<dialog>` or `role="dialog"` + `aria-modal="true"` + `aria-labelledby` linking to the h2 id.
-  - Focus trap: `useEffect` on open, set focus to typedConfirm input (high) or first button (low/medium); on close, return focus to trigger.
-  - Escape key handler: pressing Esc calls `onClose()`.
-- L3: Replace hardcoded `seq: 0` / `seq: 1` in incident-analyzer with computed values — likely overlaps with H5; if H5 is done, this is automatically satisfied.
-- L4: Add a comment in `context-aggregator.ts` near `MAX_CONTEXT_CHARS = 400_000` explaining the rough ratio: Anthropic ~3.5 char/token, OpenAI ~4 char/token. Note: 400K chars ≈ 100-115K tokens depending on model. If precise per-model budgets matter later, switch to token-counting via tiktoken or model-specific libraries.
-- L5: Replace `usage.inputTokens || 0` with `usage.inputTokens ?? 0` (nullish coalescing — semantically correct for numeric 0).
-
-===========================================
-VERIFICATION
-===========================================
-
-After applying ALL fixes:
-1. `cd devops-app && npm run typecheck` — MUST pass with NO new errors (baseline: 5 pre-existing in schema.ts/main.tsx).
-2. Write summary listing:
-   - Tasks completed per ID (H1-H14, M1-M10, L-ALL)
-   - Tasks skipped + reason (if any)
-   - Any files left in broken state (should be NONE)
-   - Any new migration files added (H1, H3)
-
-Do NOT commit. Do NOT push. Just write files and report.
+If any /speckit.full-spec invocation fails (validation failure, infra error, etc.), STOP, do not proceed to next spec, print which one failed + the full error, and exit. Do not silently skip.
